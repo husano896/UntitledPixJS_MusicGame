@@ -329,9 +329,9 @@ export class Scene_Title extends Scene {
 		// 開始畫第一個小節線的時間點
 		const startTime = Math.floor(this.time / this.secPerBeat / 4) * (this.secPerBeat * 4);
 		for (let time = 0; time < 8; time++) {
-			const noteTime = startTime + this.secPerBeat * 2 * time;
+			const noteTime = startTime + this.secPerBeat * time;
 			// 時間差距越小圈圈越大
-			const lineSize = this.getlineSizeByTime(noteTime, 8);
+			const lineSize = this.getlineSizeByTime(noteTime, time%4 === 0? 8 : 4);
 			const rad = this.getRadiusByTime(noteTime)
 			this.assistDivider.lineStyle(lineSize, 0x222222);
 			this.assistDivider.drawCircle(0, 0, rad);
