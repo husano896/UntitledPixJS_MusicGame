@@ -65,6 +65,7 @@ export class Scene_Title extends Scene {
 
 	// 工具列
 	toolBar: PIXI.Container;
+	noteToolBar: PIXI.Container;
 	// 目前載入的音樂
 	music: Howl;
 
@@ -137,6 +138,12 @@ export class Scene_Title extends Scene {
 		this.debugText.y = GameConsts.height - 24;
 
 		this.music = $R.Audio.music;
+
+		// Note 工具列
+		this.noteToolBar = this.createNoteTypeToolbar();
+		this.noteToolBar.x = GameConsts.width - 96;
+		this.noteToolBar.y = 48 + 8;
+		this.addChild(this.noteToolBar);
 
 		// BPM
 		this.BPMText = new PIXI.Text(`BPM: ${this.BPM}`, { fontFamily: 'Arial', fontSize: 24, fill: 0xffffff, align: 'left' });
@@ -251,17 +258,82 @@ export class Scene_Title extends Scene {
 		return container;
 	}
 
+	// 設定Note類型的Toolbar
+	createNoteTypeToolbar() {
+		const container = new PIXI.Container();
+
+		const noteTypeContainers = [
+			{ name: 'Click', noteType: 1, color: 0x0 },
+			{ name: 'Catch', noteType: 2, color: 0xffff00 },
+			{ name: 'Long', noteType: 3, color: 0x00FFFF },
+			{ name: 'LRotate', noteType: 4, color: 0xFF3333 },
+			{ name: 'RRotate', noteType: 5, color: 0x3333FF }
+		].map((noteType, index: number) => {
+			const c = new PIXI.Container();
+			const rect = new PIXI.Graphics();
+			const text = new PIXI.Text(noteType.name, { fontFamily: 'Arial', fontSize: 24, fill: noteType.color, align: 'center' });
+			rect.lineStyle(2, 0xFFFFFF, 0.8);
+			rect.beginFill(0xBBBBBB);
+			rect.drawRect(0, 0, 96, 32);
+			rect.endFill();
+			text.x = 4;
+			c.y = (32 + 8) * index;
+			c.addChild(rect);
+			c.addChild(text);
+			c.interactive = true;
+			c.buttonMode = true;
+			c.on('pointerdown', () => {
+				this.noteType = noteType.noteType;
+				if (this.selectedNote) { this.selectedNote.type = noteType.noteType };
+			});
+			return c;
+		});
+
+
+		const noteSizeContainers = [
+			{ name: 'Small', size: 1 },
+			{ name: 'Medium', size: 2 },
+			{ name: 'Large', size: 3 },
+			{ name: 'Full', size: 99 },
+		].map((noteType, index: number) => {
+			const c = new PIXI.Container();
+			const rect = new PIXI.Graphics();
+			const text = new PIXI.Text(noteType.name, { fontFamily: 'Arial', fontSize: 24, fill: 0x0, align: 'center' });
+			rect.lineStyle(2, 0xFFFFFF, 0.8);
+			rect.beginFill(0xBBBBBB);
+			rect.drawRect(0, 0, 96, 32);
+			rect.endFill();
+			text.x = 4;
+			c.y = (32 + 8) * index + 240; // 192 要改成NoteType最底y
+			c.addChild(rect);
+			c.addChild(text);
+			c.interactive = true;
+			c.buttonMode = true;
+			c.on('pointerdown', () => {
+				this.noteSize = noteType.size;
+				if (this.selectedNote) { this.selectedNote.size = noteType.size };
+			});
+			return c;
+		});
+		noteTypeContainers.forEach(c => container.addChild(c));
+		
+		noteSizeContainers.forEach(c => container.addChild(c));
+		return container;
+	}
+
 	getlineSizeByTime(timeSec, maxSize) {
 		// displayseconds更小時, rad會變成負值而不顯示
 		return maxSize * (1 - (timeSec - this.time) / this.DISPLAYSECONDS);
 	}
 
-	getRadiusByTime(timeSec) {
+	getRadiusByTime(timeSec: number) {
 		if (this.time > timeSec) {
 			return 0;
 		}
 		// displayseconds更小時, rad會變成負值而不顯示
-		return (GameConsts.height / 2) * (1 - (timeSec - this.time) / this.DISPLAYSECONDS);
+		// 修正透視得把時間影響scale的係數調小, 這邊為0.8 + 基礎0.2
+		return (GameConsts.height / 2) * (1 - (timeSec - this.time) / this.DISPLAYSECONDS) * 0.8 +
+			(GameConsts.height / 2) * 0.2;
 	}
 
 	updateJudgeBar() {
@@ -331,7 +403,7 @@ export class Scene_Title extends Scene {
 		for (let time = 0; time < 8; time++) {
 			const noteTime = startTime + this.secPerBeat * time;
 			// 時間差距越小圈圈越大
-			const lineSize = this.getlineSizeByTime(noteTime, time%4 === 0? 8 : 4);
+			const lineSize = this.getlineSizeByTime(noteTime, time % 4 === 0 ? 8 : 4);
 			const rad = this.getRadiusByTime(noteTime)
 			this.assistDivider.lineStyle(lineSize, 0x222222);
 			this.assistDivider.drawCircle(0, 0, rad);
@@ -381,7 +453,7 @@ export class Scene_Title extends Scene {
 		return this.notes.find(n =>
 			time <= n.time &&
 			(n.time - time) <= this.secPerBeat &&
-			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * n.size 
+			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * n.size
 		);
 	}
 
@@ -446,27 +518,27 @@ export class Scene_Title extends Scene {
 			case 'KeyQ':
 				// 單點
 				this.noteType = 1;
-				if (this.selectedNote) { this.selectedNote.size = 1 };
+				if (this.selectedNote) { this.selectedNote.type = 1 };
 				break;
 			case 'KeyW':
 				// Catch
 				this.noteType = 2;
-				if (this.selectedNote) { this.selectedNote.size = 2 };
+				if (this.selectedNote) { this.selectedNote.type = 2 };
 				break;
 			case 'KeyE':
 				// 長壓
 				this.noteType = 3;
-				if (this.selectedNote) { this.selectedNote.size = 3 };
+				if (this.selectedNote) { this.selectedNote.type = 3 };
 				break;
 			case 'KeyR':
 				// 左旋
 				this.noteType = 4;
-				if (this.selectedNote) { this.selectedNote.size = 4 };
+				if (this.selectedNote) { this.selectedNote.type = 4 };
 				break;
 			case 'KeyT':
 				// 右旋
 				this.noteType = 5;
-				if (this.selectedNote) { this.selectedNote.size = 5 };
+				if (this.selectedNote) { this.selectedNote.type = 5 };
 				break;
 
 			// 設定Note大小
