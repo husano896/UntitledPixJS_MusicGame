@@ -563,7 +563,7 @@ export class Scene_Title extends Scene {
 	// 以時間和角度取得點擊到的Note
 	getNoteByTimeAndRotation(time, rotation) {
 		return this.notes.find(n =>
-			n.time >= this.time && time <= n.time &&
+			n.time >= this.time && time >= n.time &&
 			Math.abs(n.time - time) <= (240 / this.BPM / this.assistDividerDivideNumber) &&
 			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * n.size
 		);
@@ -757,6 +757,7 @@ export class Scene_Title extends Scene {
 				// 正式譜面格式?
 				this.notes = input.notes;
 				this.BPMList = input.BPMList;
+				this.BPMText.text = `BPM: ${this.BPM.toString()}`;
 			};
 			reader.onerror = (e) => alert(e.target.error.name);
 			reader.readAsText(file);
@@ -827,11 +828,11 @@ export class Scene_Title extends Scene {
 		const stepTime = (60 / this.BPM);
 		return passedBPMTime + Math.floor((this.time - passedBPMTime) / stepTime) * (stepTime);
 	}
-	
+
 	// TODO: 以時間和Note取得目前長條所在的角度
 	getCurrentRailRotationByTime(note: INote, time: number) {
 		// 壓根兒還沒開始或已經超出最後一個節點位置了
-		if (time < note.time || time > note.nodes[note.nodes.length-1].time) {
+		if (time < note.time || time > note.nodes[note.nodes.length - 1].time) {
 			return null;
 		}
 	}
