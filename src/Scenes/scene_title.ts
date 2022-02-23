@@ -565,7 +565,7 @@ export class Scene_Title extends Scene {
 		return this.notes.find(n =>
 			n.time >= this.time && time >= n.time &&
 			Math.abs(n.time - time) <= (240 / this.BPM / this.assistDividerDivideNumber) &&
-			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * n.size
+			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * n.size + this.DEGREEDIV * this.noteSize
 		);
 	}
 
