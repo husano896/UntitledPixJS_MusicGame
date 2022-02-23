@@ -1,7 +1,7 @@
 
 import * as PIXI from 'pixi.js';
 
-export const Version = '0.1 - 20211126';
+export const Version = '0.2 - 20220223';
 export const GameConsts = {
 	width: 1280,
 	height: 800

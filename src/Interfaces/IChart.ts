@@ -90,7 +90,7 @@ export const exampleChart: IChart = {
 	notes: [],
 	rotates: [],
 	scrollSpeeds: [],
-	version: '1.0-20211126',
+	version: '1.1-20220223',
 	beatList: [
 		[0, 4, 4]
 	],

@@ -563,8 +563,8 @@ export class Scene_Title extends Scene {
 	// 以時間和角度取得點擊到的Note
 	getNoteByTimeAndRotation(time, rotation) {
 		return this.notes.find(n =>
-			time <= n.time &&
-			(n.time - time) <= this.secPerBeat &&
+			n.time >= this.time && time <= n.time &&
+			Math.abs(n.time - time) <= (240 / this.BPM / this.assistDividerDivideNumber) &&
 			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * n.size
 		);
 	}
@@ -578,7 +578,7 @@ export class Scene_Title extends Scene {
 		// 按下右鍵時
 		if (event.data.button === 2) {
 			// 不可以放置比開始點還早的note
-			if (this.previewTime <= this.time) {
+			if (this.previewTime < this.time) {
 				return;
 			}
 			if (!this.selectedNote) {
@@ -729,9 +729,7 @@ export class Scene_Title extends Scene {
 			beatList: [
 				[0, 4, 4]
 			],
-			BPMList: [
-				[0, 160]
-			]
+			BPMList: this.BPMList
 		}
 		const a = document.createElement('a');
 		a.href = URL.createObjectURL(new Blob([JSON.stringify(output)], { type: `text/json` }));
@@ -754,10 +752,11 @@ export class Scene_Title extends Scene {
 			reader.onload = (e) => {
 				const file = e.target.result as string;
 
-				const input = JSON.parse(file);
+				const input = JSON.parse(file) as IChart;
 				console.log(input);
 				// 正式譜面格式?
-				this.notes = (input as IChart).notes;
+				this.notes = input.notes;
+				this.BPMList = input.BPMList;
 			};
 			reader.onerror = (e) => alert(e.target.error.name);
 			reader.readAsText(file);
@@ -827,6 +826,14 @@ export class Scene_Title extends Scene {
 		}).reduce((a, b) => a + b);
 		const stepTime = (60 / this.BPM);
 		return passedBPMTime + Math.floor((this.time - passedBPMTime) / stepTime) * (stepTime);
+	}
+	
+	// TODO: 以時間和Note取得目前長條所在的角度
+	getCurrentRailRotationByTime(note: INote, time: number) {
+		// 壓根兒還沒開始或已經超出最後一個節點位置了
+		if (time < note.time || time > note.nodes[note.nodes.length-1].time) {
+			return null;
+		}
 	}
 }
 
