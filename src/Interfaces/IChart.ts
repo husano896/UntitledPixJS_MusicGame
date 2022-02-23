@@ -75,6 +75,10 @@ export interface IChart {
 	scrollSpeeds?: Array<IScrollSpeed>
 	// 版本
 	version: string;
+	// 20220223新增：小節拍子資訊 時間, 每小節幾拍 / 幾分
+	beatList: Array<[number, number, number]>;
+	// 20220223新增：BPM
+	BPMList: Array<[number, number]>;
 }
 
 // 
@@ -86,5 +90,11 @@ export const exampleChart: IChart = {
 	notes: [],
 	rotates: [],
 	scrollSpeeds: [],
-	version: '1.0-20211126'
+	version: '1.0-20211126',
+	beatList: [
+		[0, 4, 4]
+	],
+	BPMList: [
+		[0, 160]
+	]
 };

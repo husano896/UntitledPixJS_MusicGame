@@ -13,6 +13,7 @@ const $R = {
     iconPause: 'imgs/pause_white.png',
     iconRewind: 'imgs/fast_rewind.png',
     iconQueueMusic: 'imgs/queue_music.png',
+    bg: 'imgs/bg.jpg',
   }
 }
 // 圖像處理部分

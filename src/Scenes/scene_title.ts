@@ -1,3 +1,4 @@
+import { Window_BPM } from './window_bpm';
 import * as PIXI from 'pixi.js';
 
 import { Version, GameConsts } from '../constants';
@@ -14,6 +15,8 @@ export class Scene_Title extends Scene {
 	noteGraphics: PIXI.Graphics;
 	// 預覽拍點
 	previewGraphics: PIXI.Graphics;
+	// 傳統版拍點顯示
+	classicNoteGraphics: PIXI.Graphics;
 
 	// 目前時間(秒)
 	time: number;
@@ -37,16 +40,21 @@ export class Scene_Title extends Scene {
 	DEGREEDIV: number = 15;
 
 	// 顯示幾秒內的Note
-	DISPLAYSECONDS: number = 3;
+	DISPLAYSECONDS: number = 2;
 
 	// 音樂BPM
-	BPM: number;
+	BPMList: Array<[number, number]>;
 
 	// 計算用：每拍秒數
 	secPerBeat: number;
 
+	// 輔助小節線繪製間格 ( 8 = 1/8, 16 = 1/16)
+	assistDividerDivideNumber = 4;
+
+	// 幾分音符的支援
+	divideNumbers = [1, 2, 4, 8, 12, 16, 24, 32, 48, 64];
+
 	// 覺得顯示晚於音樂 ( 視覺拍點還沒到音樂卻到了)時請調高
-	OFFSET: number;
 
 	// 已有拍點
 	notes: INote[];
@@ -63,53 +71,48 @@ export class Scene_Title extends Scene {
 
 	hiSpeedText: PIXI.Text;
 
-	// 工具列
-	toolBar: PIXI.Container;
-	noteToolBar: PIXI.Container;
 	// 目前載入的音樂
 	music: Howl;
 
+	// 生HTML
+	gameContainer: HTMLElement;
 	// 讀取資源區
 	constructor() {
 		super();
-
-		this.on('pointerdown', this.onMouseDown.bind(this));
-		this.on('pointermove', this.onMouseMove.bind(this));
-		this.on('mousewheel', this.onMouseWheel.bind(this));
-
+		this.gameContainer = document.querySelector('#game-container');
 		document.oncontextmenu = (ev) => ev.preventDefault();
 		document.addEventListener('keydown', this.onKeyDown.bind(this));
 		console.log(this);
-
-		this.interactive = true;
-
-		// 小節線
-		this.assistDivider = new PIXI.Graphics();
-		this.assistDivider.x = GameConsts.height / 2;
-		this.assistDivider.y = GameConsts.height / 2;
-		this.addChild(this.assistDivider);
+		// 背景
+		this.addChild(PIXI.Sprite.from($R.Image.bg));
 
 		// 判定線
 		this.judgeBar = new PIXI.Graphics();
-		this.judgeBar.x = this.assistDivider.x;
-		this.judgeBar.y = this.assistDivider.y;
+		this.judgeBar.x = GameConsts.height / 2;
+		this.judgeBar.y = GameConsts.height / 2;
 		this.judgeBar.lineStyle(16, 0x2266ff);
 		this.judgeBar.drawCircle(0, 0, GameConsts.height / 2);
 
-		this.addChild(this.judgeBar);
+		// 小節線
+		this.assistDivider = new PIXI.Graphics();
+		this.judgeBar.addChild(this.assistDivider);
 
 		// 拍點
 		this.noteGraphics = new PIXI.Graphics();
-		this.noteGraphics.x = this.assistDivider.x;
-		this.noteGraphics.y = this.assistDivider.y;
-		this.addChild(this.noteGraphics);
+		this.judgeBar.addChild(this.noteGraphics);
 
 		// 預覽Note
 		this.previewGraphics = new PIXI.Graphics();
 		this.previewGraphics.alpha = 0.5;
-		this.previewGraphics.x = this.assistDivider.x;
-		this.previewGraphics.y = this.assistDivider.y;
-		this.addChild(this.previewGraphics);
+		this.judgeBar.addChild(this.previewGraphics);
+
+		// 速度文字
+		this.hiSpeedText = new PIXI.Text(`${this.DISPLAYSECONDS * 1000}`, { fontFamily: 'Arial', fontSize: 18, fill: 0x00cc00, align: 'center' });
+		this.hiSpeedText.anchor.set(0.5);
+		this.judgeBar.addChild(this.hiSpeedText);
+
+		// 整個圈的Container
+		this.addChild(this.judgeBar);
 
 		//
 		this.time = 0;
@@ -120,57 +123,77 @@ export class Scene_Title extends Scene {
 		this.selectedNote = null;
 		// 常數
 		// 一刻度 = 15度
-		this.BPM = 165;
+		this.BPMList = [[0, 165]];
 
-		// 覺得顯示晚於音樂 ( 視覺拍點還沒到音樂卻到了)時請調高
-		this.OFFSET = 0.0;
 		this.secPerBeat = 60 / this.BPM;
-
+		this.music = $R.Audio.music;
 		this.notes = [];
 
 		// 工具列
-		this.toolBar = this.createToolbar();
-		this.toolBar.x = GameConsts.height;
-		this.addChild(this.toolBar);
+		const toolBar = this.createToolbar();
+		toolBar.x = GameConsts.height;
+		this.addChild(toolBar);
 
 		this.debugText = new PIXI.Text('Debug text', { fontFamily: 'Arial', fontSize: 18, fill: 0xffffff, align: 'right' });
 		this.debugText.x = GameConsts.height;
 		this.debugText.y = GameConsts.height - 24;
 
-		this.music = $R.Audio.music;
+
+		// 小節分割顯示
+		const divideText = new PIXI.Text(`1/${this.assistDividerDivideNumber}拍`,
+			{ fontFamily: 'Arial', fontSize: 24, fill: 0xffffff, align: 'left' })
+		divideText.interactive = true;
+		divideText.buttonMode = true;
+		divideText.on('pointerdown', (() => {
+			// 設定分割數
+			this.assistDividerDivideNumber = this.divideNumbers[
+				(this.divideNumbers.findIndex(v => v === this.assistDividerDivideNumber) + 1) % this.divideNumbers.length];
+			divideText.text = `1/${this.assistDividerDivideNumber}拍`;
+		}).bind(this));
+		divideText.x = GameConsts.width - 96;
+		divideText.y = 48 + 8;
+
+		this.addChild(divideText);
 
 		// Note 工具列
-		this.noteToolBar = this.createNoteTypeToolbar();
-		this.noteToolBar.x = GameConsts.width - 96;
-		this.noteToolBar.y = 48 + 8;
-		this.addChild(this.noteToolBar);
+		const noteToolBar = this.createNoteTypeToolbar();
+		noteToolBar.x = GameConsts.width - 96;
+		noteToolBar.y = divideText.y + 24 + 8;
+		this.addChild(noteToolBar);
 
 		// BPM
 		this.BPMText = new PIXI.Text(`BPM: ${this.BPM}`, { fontFamily: 'Arial', fontSize: 24, fill: 0xffffff, align: 'left' });
-		this.BPMText.x = this.toolBar.x;
-		this.BPMText.y = this.toolBar.y + 48;
+		this.BPMText.x = toolBar.x;
+		this.BPMText.y = toolBar.y + 48;
 		this.BPMText.interactive = true;
 		this.BPMText.buttonMode = true;
 		this.BPMText.on('pointerdown', this.changeBPM.bind(this));
 		this.addChild(this.BPMText);
 
-		this.hiSpeedText = new PIXI.Text(`${this.DISPLAYSECONDS * 1000}`, { fontFamily: 'Arial', fontSize: 18, fill: 0x00cc00, align: 'center' });
-		this.hiSpeedText.anchor.set(0.5);
-		this.hiSpeedText.x = this.assistDivider.x;
-		this.hiSpeedText.y = this.assistDivider.y;
-		this.addChild(this.hiSpeedText);
+		// 傳統版拍點顯示
+		this.classicNoteGraphics = new PIXI.Graphics();
+		this.classicNoteGraphics.x = noteToolBar.x - 144 - 32;
+		this.classicNoteGraphics.y = noteToolBar.y;
+		this.addChild(this.classicNoteGraphics);
 
 		// 重整前提示
 		window.onbeforeunload = () => confirm('Are you sure you want to quit?');
 
 		// 滑鼠滾輪事件
 		document.addEventListener('mousewheel', this.onMouseWheel.bind(this), false);
+
+		// 加Note事件綁定在判定線上
+		this.judgeBar.interactive = true;
+		this.judgeBar.buttonMode = true;
+		this.interactive = true;
+		this.on('pointerdown', this.onMouseDown.bind(this));
+		this.on('pointermove', this.onMouseMove.bind(this));
 	}
 
 	update(delta) {
 
 		// 與歌曲同步目前時間點
-		this.time = this.music.seek() + this.OFFSET;
+		this.time = this.music.seek();
 
 		// 判定線
 		this.updateJudgeBar();
@@ -186,22 +209,21 @@ export class Scene_Title extends Scene {
 
 		// 更新狀態文字
 		this.updateStatusText();
+
+		// 更新經典拍點顯示
+		this.updateClassicLane();
 	}
 
 	createToolbar() {
 		const container = new PIXI.Container();
 		// 讀檔按鈕
 		const loadButton = PIXI.Sprite.from($R.Image.iconLoad);
-		loadButton.interactive = true;
-		loadButton.buttonMode = true;
 		loadButton.on('pointerdown', this.loadChart.bind(this));
 		loadButton.x = 0;
 		container.addChild(loadButton);
 
 		// 存檔按鈕
 		const saveButton = PIXI.Sprite.from($R.Image.iconSave);
-		saveButton.interactive = true;
-		saveButton.buttonMode = true;
 		saveButton.on('pointerdown', this.saveChart.bind(this));
 		saveButton.x = loadButton.x + 48;
 
@@ -209,8 +231,6 @@ export class Scene_Title extends Scene {
 
 		// 播放按鈕
 		const playButton = PIXI.Sprite.from($R.Image.iconPlay);
-		playButton.interactive = true;
-		playButton.buttonMode = true;
 		playButton.on('pointerdown', () => {
 			this.music.playing() ? this.music.pause() : this.music.play();
 		});
@@ -220,8 +240,6 @@ export class Scene_Title extends Scene {
 
 		// 暫停按鈕
 		const pauseButton = PIXI.Sprite.from($R.Image.iconPause);
-		pauseButton.interactive = true;
-		pauseButton.buttonMode = true;
 		pauseButton.on('pointerdown', () => {
 			this.music.pause()
 		});
@@ -231,8 +249,6 @@ export class Scene_Title extends Scene {
 
 		// 回放按鈕
 		const rewindButton = PIXI.Sprite.from($R.Image.iconRewind);
-		rewindButton.interactive = true;
-		rewindButton.buttonMode = true;
 		rewindButton.on('pointerdown', () => {
 			this.music.seek(0);
 		});
@@ -242,8 +258,6 @@ export class Scene_Title extends Scene {
 
 		// 選擇音樂按鈕
 		const selMusicButton = PIXI.Sprite.from($R.Image.iconQueueMusic);
-		selMusicButton.interactive = true;
-		selMusicButton.buttonMode = true;
 		selMusicButton.on('pointerdown', this.loadMusic.bind(this));
 		selMusicButton.x = rewindButton.x + 48;
 
@@ -252,6 +266,10 @@ export class Scene_Title extends Scene {
 		// 狀態文字
 		this.statusText = new PIXI.Text('', { fontFamily: 'Arial', fontSize: 24, fill: 0xffffff, align: 'left' });
 		this.statusText.x = selMusicButton.x + 48 + 8;
+		container.children.forEach(c => {
+			c.interactive = true;
+			c.buttonMode = true;
+		})
 		container.addChild(this.statusText);
 		container.addChild(container);
 
@@ -262,6 +280,7 @@ export class Scene_Title extends Scene {
 	createNoteTypeToolbar() {
 		const container = new PIXI.Container();
 
+		// 設定Note類型
 		const noteTypeContainers = [
 			{ name: 'Click', noteType: 1, color: 0x0 },
 			{ name: 'Catch', noteType: 2, color: 0xffff00 },
@@ -288,8 +307,7 @@ export class Scene_Title extends Scene {
 			});
 			return c;
 		});
-
-
+		// 設定Note大小
 		const noteSizeContainers = [
 			{ name: 'Small', size: 1 },
 			{ name: 'Medium', size: 2 },
@@ -316,7 +334,6 @@ export class Scene_Title extends Scene {
 			return c;
 		});
 		noteTypeContainers.forEach(c => container.addChild(c));
-		
 		noteSizeContainers.forEach(c => container.addChild(c));
 		return container;
 	}
@@ -344,13 +361,12 @@ export class Scene_Title extends Scene {
 		this.noteGraphics.clear();
 
 		this.notes.forEach(n => {
-			if (this.time > n.time) {
-				if (this.music.playing) {
-					if (!this.lastTickNote || (this.lastTickNote && this.lastTickNote.time < n.time)) {
+			// 輔助音播放
+			if (this.music.playing()) {
+				if (this.time > n.time) {
+					if (!this.lastTickNote || this.lastTickNote.time < n.time) {
+						$R.Audio.tick.play();
 						this.lastTickNote = n;
-						if (this.lastTickNote) {
-							$R.Audio.tick.play();
-						}
 					}
 				}
 			}
@@ -362,7 +378,7 @@ export class Scene_Title extends Scene {
 				// 接
 				switch (n.type) {
 					case 2:
-						this.noteGraphics.lineStyle(lineSize, 0xaaaa00, alpha);
+						this.noteGraphics.lineStyle(lineSize, 0xcccc00, alpha);
 						break;
 					case 3:
 						// 長壓
@@ -377,15 +393,15 @@ export class Scene_Title extends Scene {
 						this.noteGraphics.lineStyle(lineSize, 0x3333ff, alpha);
 						break;
 					default:
-						this.noteGraphics.lineStyle(lineSize, 0xaaaaaa, alpha);
+						this.noteGraphics.lineStyle(lineSize, 0xffffff, alpha);
 				}
-
 
 				// x, y, 半徑
 				const rad = this.getRadiusByTime(n.time);
 
 				// / 57.2958
 				const rotation = n.rotation / 57.2958;
+				// 角度0時為3點鐘方向
 				this.noteGraphics.arc(0, 0, rad,
 					-0.19 * (n.size || 1) + rotation - Math.PI / 2,
 					0.19 * (n.size || 1) + rotation - Math.PI / 2);
@@ -394,18 +410,37 @@ export class Scene_Title extends Scene {
 		});
 	}
 
+	// 小節線
 	updateAssistDivider() {
 		this.assistDivider.clear();
 		// 距離0時最大顯示lineSize = 高/2
 
 		// 開始畫第一個小節線的時間點
-		const startTime = Math.floor(this.time / this.secPerBeat / 4) * (this.secPerBeat * 4);
-		for (let time = 0; time < 8; time++) {
-			const noteTime = startTime + this.secPerBeat * time;
+		// 15 = (60 / 4)
+		const stepTime = (60 * 4 / this.BPM) / this.assistDividerDivideNumber;
+
+		const startTime = Math.floor(this.time / stepTime) * (stepTime);
+		for (let time = startTime; time < startTime + this.DISPLAYSECONDS; time += stepTime) {
+
+			// 已過去的不再繪製
+			if (time < this.time) {
+				continue;
+			}
+			// 避免浮點運算誤差, 相差一小段時間的判定在小節線上
+			const secPerMesure = (60 * 4 / this.BPM);
+			const v = (time % secPerMesure) / secPerMesure;
+			// 小節線
+			const isOnBarLine = v < 0.01 || v > 0.99;
+			// 拍子線
+			const secPerBeat = (60 / this.BPM);
+			const v2 = (time % secPerBeat) / secPerBeat;
+			const isOnBarBeat = v2 < 0.01 || v2 > 0.99;
+
+			const lineSize = this.getlineSizeByTime(time, isOnBarLine ? 8 : 4);
 			// 時間差距越小圈圈越大
-			const lineSize = this.getlineSizeByTime(noteTime, time % 4 === 0 ? 8 : 4);
-			const rad = this.getRadiusByTime(noteTime)
-			this.assistDivider.lineStyle(lineSize, 0x222222);
+			const rad = this.getRadiusByTime(time)
+			// 剛好在小節線上的加亮判定
+			this.assistDivider.lineStyle(lineSize, isOnBarLine ? 0xa0a0a0 : (isOnBarBeat ? 0x707070 : 0x303030), 1);
 			this.assistDivider.drawCircle(0, 0, rad);
 		}
 	}
@@ -417,7 +452,7 @@ export class Scene_Title extends Scene {
 		switch (this.noteType) {
 			// 單點
 			case 1:
-				this.previewGraphics.lineStyle(lineSize, 0xaaaaaa, 1);
+				this.previewGraphics.lineStyle(lineSize, 0xffffff, 1);
 				break;
 			// 接
 			case 2:
@@ -448,6 +483,83 @@ export class Scene_Title extends Scene {
 		this.statusText.text = `Time: ${this.time.toFixed(4)}\nNotes: ${this.notes.length}`;
 	}
 
+	updateClassicLane() {
+		this.classicNoteGraphics.clear();
+
+		const width = 160;
+		const height = 600;
+		const noteWidth = 18;
+		const noteHeight = 6;
+
+		// 小節線繪製
+		const stepTime = (60 / this.BPM);
+		const startTime = Math.ceil(this.time / stepTime) * (stepTime);
+
+		for (let time = startTime; time < startTime + this.DISPLAYSECONDS * 2; time += stepTime) {
+			// 過去的小節線不再繪製
+			if (time < this.time) {
+				continue;
+			}
+			const secPerMesure = (60 * 4 / this.BPM);
+			const v = (time % secPerMesure) / secPerMesure;
+			// 小節線
+			// 避免浮點運算誤差, 相差一小段時間的判定在小節線上
+			const isOnBarLine = v < 0.01 || v > 0.99;
+
+			const lineSize = isOnBarLine ? 2 : 1;
+			const y = height * (1 - (time - this.time) / this.DISPLAYSECONDS / 2);
+			this.classicNoteGraphics.lineStyle(lineSize, isOnBarLine ? 0xa0a0a0 : 0x707070);
+			this.classicNoteGraphics.beginFill(isOnBarLine ? 0xa0a0a0 : 0x707070);
+			this.classicNoteGraphics.drawRect(0, y, width, lineSize);
+			this.classicNoteGraphics.endFill();
+		}
+
+		// 拍點繪製 
+		this.notes.forEach(n => {
+			// Note還在畫面上時且距離還沒有很遠時繪製
+			// 會繪製兩秒內的Note
+			if (this.time <= n.time && n.time - this.time < this.DISPLAYSECONDS * 2) {
+				const alpha = this.selectedNote !== n ? 1 : 1 + Math.sin(new Date().getTime() / 100) * 0.5;
+				// 接
+				switch (n.type) {
+					case 2:
+						this.classicNoteGraphics.lineStyle(2, 0xcccc00, alpha);
+						break;
+					case 3:
+						// 長壓
+						this.classicNoteGraphics.lineStyle(2, 0x00aaaa, alpha);
+						break;
+					case 4:
+						// 左旋
+						this.classicNoteGraphics.lineStyle(2, 0xff3333, alpha);
+						break;
+					case 5:
+						// 右旋
+						this.classicNoteGraphics.lineStyle(2, 0x3333ff, alpha);
+						break;
+					default:
+						this.classicNoteGraphics.lineStyle(2, 0xffffff, alpha);
+				}
+				const y = height * (1 - (n.time - this.time) / this.DISPLAYSECONDS / 2);
+				this.classicNoteGraphics.beginFill(this.classicNoteGraphics.line.color, 1);
+				this.classicNoteGraphics.drawRect(0, y - noteHeight, noteWidth, noteHeight);
+				this.classicNoteGraphics.endFill();
+
+			}
+		});
+	}
+
+	// 更新目前預覽Note的時間
+	// TODO: 變速對應
+	updatePreviewTime(distance: number) {
+
+		const height = this.judgeBar.height;
+		const selectedTime = Math.round(
+			(this.time + this.DISPLAYSECONDS * (height / 2 - distance) / (height / 2)) / (240 / this.BPM / this.assistDividerDivideNumber)
+		) * (240 / this.BPM / this.assistDividerDivideNumber);
+
+		this.previewTime = selectedTime;
+	}
 	// 以時間和角度取得點擊到的Note
 	getNoteByTimeAndRotation(time, rotation) {
 		return this.notes.find(n =>
@@ -470,7 +582,6 @@ export class Scene_Title extends Scene {
 				return;
 			}
 			if (!this.selectedNote) {
-
 				// 放置note
 				const newNote = {
 					time: this.previewTime,
@@ -493,21 +604,20 @@ export class Scene_Title extends Scene {
 		const y = event.data.global.y;
 
 		// 作為預覽用
-		const dx = this.noteGraphics.x - x;
-		const dy = this.noteGraphics.y - y;
-		const distance = Math.min(Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2)), GameConsts.height);
+		const dx = this.judgeBar.x - x;
+		const dy = this.judgeBar.y - y;
+		const height = this.judgeBar.height;
+		const distance = Math.min(Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2)), height);
 		const dir = Math.atan2(dy, dx) - Math.PI / 2;
-
 		// 以目前播放到的時間 加上 點擊的位置換算的時間
-		const selectedTime = Math.round(
-			(this.time + this.DISPLAYSECONDS * (GameConsts.height / 2 - distance) / (GameConsts.height / 2)) / (this.secPerBeat / 4)
-		) * (this.secPerBeat / 4);
-
-		this.previewTime = selectedTime;
+		// 240 = 60 * 4
+		// 60 / BPM = 每拍秒數
+		// 240 / BPM = 每小節秒數
+		this.updatePreviewTime(distance);
 		// 把角度以刻度分開
 		this.previewGraphics.rotation = Math.round(dir * 57.2958 / this.DEGREEDIV) * this.DEGREEDIV / 57.2958;
 
-		this.debugText.text = `${selectedTime}`;
+		this.debugText.text = `${this.previewTime}}`;
 	}
 
 	onKeyDown(event: KeyboardEvent) {
@@ -590,15 +700,14 @@ export class Scene_Title extends Scene {
 				this.music.stop();
 				break;
 			case 'Space':
-				this.lastTickNote = this.notes.find(n => n.time > this.time);
 				this.music.playing() ? this.music.pause() : this.music.play();
+				this.lastTickNote = this.notes[this.notes.findIndex(n => n.time > this.time) - 1];
 				break;
 		}
 	}
 
 	onMouseWheel(e: Event) {
 		const event = e as WheelEvent;
-		console.log(event);
 		const v = this.music.seek();
 		if (event.deltaY > 0) {
 			// 往下滾時
@@ -616,7 +725,13 @@ export class Scene_Title extends Scene {
 			level: 7,
 			notes: this.notes.sort((a, b) => a.time - b.time),
 			rotates: [],
-			version: Version
+			version: Version,
+			beatList: [
+				[0, 4, 4]
+			],
+			BPMList: [
+				[0, 160]
+			]
 		}
 		const a = document.createElement('a');
 		a.href = URL.createObjectURL(new Blob([JSON.stringify(output)], { type: `text/json` }));
@@ -641,16 +756,10 @@ export class Scene_Title extends Scene {
 
 				const input = JSON.parse(file);
 				console.log(input);
-				if (input instanceof Array) {
-					// 初版：只有Notes
-					this.notes = input;
-				} else {
-					// 正式譜面格式?
-					this.notes = (input as IChart).notes;
-				}
+				// 正式譜面格式?
+				this.notes = (input as IChart).notes;
 			};
 			reader.onerror = (e) => alert(e.target.error.name);
-
 			reader.readAsText(file);
 
 		});
@@ -679,7 +788,6 @@ export class Scene_Title extends Scene {
 				this.music = m;
 			};
 			reader.onerror = (e) => alert(e.target.error.name);
-
 			reader.readAsDataURL(file);
 
 		});
@@ -687,13 +795,38 @@ export class Scene_Title extends Scene {
 		a.click();
 	}
 
-	changeBPM() {
-		const bpm = parseFloat(prompt('請輸入BPM：'));
-		if (bpm !== 0 && !isNaN(bpm)) {
-			this.BPM = bpm;
-			this.secPerBeat = 60 / bpm;
-			this.BPMText.text = `BPM: ${bpm.toString()}`;
+	// HTML部分
+	async changeBPM() {
+		const result = await Window_BPM.open(this.gameContainer, this.BPMList);
+		console.log(result);
+		if (result) {
+			this.BPMList = result.map((bpmRow) => {
+				// 濾掉無效的BPM設定
+				if (!isNaN(bpmRow[0]) && !isNaN(bpmRow[1])) {
+					return bpmRow;
+				}
+				alert(`BPM設定：${bpmRow}無效！`)
+				return null;
+			}).filter((a) => !!a);
+			this.secPerBeat = 60 / this.BPM;
+			this.BPMText.text = `BPM: ${this.BPM.toString()}`;
 		}
+	}
+
+	get BPM() {
+		return this.BPMList.find(bpmRow => this.time >= bpmRow[0])?.[1];
+	}
+
+	// TODO: 取得目前小節的開始時間
+	get currentMeasureStartTime() {
+		const passedBPMTime = this.BPMList.map(bpmRow => {
+			// 已經過去的時間直接加上
+			if (this.time >= bpmRow[0]) {
+				return bpmRow[0];
+			}
+		}).reduce((a, b) => a + b);
+		const stepTime = (60 / this.BPM);
+		return passedBPMTime + Math.floor((this.time - passedBPMTime) / stepTime) * (stepTime);
 	}
 }
 
