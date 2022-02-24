@@ -2,10 +2,11 @@ import { Window_BPM } from './window_bpm';
 import * as PIXI from 'pixi.js';
 
 import { Version, GameConsts } from '../constants';
-import { IChart, INote } from '../Interfaces/IChart';
+import { IChart, INote, NoteType } from '../Interfaces/IChart';
 import { Scene } from './scene';
 import $R from '../resources';
 import { Howl } from 'howler';
+
 export class Scene_Title extends Scene {
 	// 小節線
 	assistDivider: PIXI.Graphics;
@@ -22,7 +23,7 @@ export class Scene_Title extends Scene {
 	time: number;
 
 	// 編輯中拍點類型
-	noteType: number;
+	noteType: NoteType;
 	// 拍點大小
 	noteSize: number;
 
@@ -71,17 +72,22 @@ export class Scene_Title extends Scene {
 
 	hiSpeedText: PIXI.Text;
 
+	ctrlText: PIXI.Text;
 	// 目前載入的音樂
 	music: Howl;
 
 	// 生HTML
 	gameContainer: HTMLElement;
+
+	ctrl: boolean;
+
 	// 讀取資源區
 	constructor() {
 		super();
 		this.gameContainer = document.querySelector('#game-container');
 		document.oncontextmenu = (ev) => ev.preventDefault();
 		document.addEventListener('keydown', this.onKeyDown.bind(this));
+		document.addEventListener('keyup', this.onKeyUp.bind(this));
 		console.log(this);
 		// 背景
 		this.addChild(PIXI.Sprite.from($R.Image.bg));
@@ -111,6 +117,12 @@ export class Scene_Title extends Scene {
 		this.hiSpeedText.anchor.set(0.5);
 		this.judgeBar.addChild(this.hiSpeedText);
 
+		this.ctrlText = new PIXI.Text(`CTRL開啟`, { fontFamily: 'Arial', fontSize: 30, fill: 0xff5555, align: 'center' });
+		this.ctrlText.anchor.set(0.5);
+		this.ctrlText.y = 26;
+		this.ctrlText.alpha = 0;
+		this.judgeBar.addChild(this.ctrlText);
+
 		// 整個圈的Container
 		this.addChild(this.judgeBar);
 
@@ -135,9 +147,9 @@ export class Scene_Title extends Scene {
 		this.addChild(toolBar);
 
 		this.debugText = new PIXI.Text('Debug text', { fontFamily: 'Arial', fontSize: 18, fill: 0xffffff, align: 'right' });
-		this.debugText.x = GameConsts.height;
-		this.debugText.y = GameConsts.height - 24;
-
+		this.debugText.x = 0;
+		this.debugText.y = 0;
+		this.addChild(this.debugText);
 
 		// 小節分割顯示
 		const divideText = new PIXI.Text(`1/${this.assistDividerDivideNumber}拍`,
@@ -282,11 +294,11 @@ export class Scene_Title extends Scene {
 
 		// 設定Note類型
 		const noteTypeContainers = [
-			{ name: 'Click', noteType: 1, color: 0x0 },
-			{ name: 'Catch', noteType: 2, color: 0xffff00 },
-			{ name: 'Long', noteType: 3, color: 0x00FFFF },
-			{ name: 'LRotate', noteType: 4, color: 0xFF3333 },
-			{ name: 'RRotate', noteType: 5, color: 0x3333FF }
+			{ name: 'Click', noteType: NoteType.CLICK, color: 0x0 },
+			{ name: 'Catch', noteType: NoteType.CATCH, color: 0xffff00 },
+			{ name: 'Long', noteType: NoteType.LONG, color: 0x00FFFF },
+			{ name: 'LRotate', noteType: NoteType.LSPIN, color: 0xFF3333 },
+			{ name: 'RRotate', noteType: NoteType.RSPIN, color: 0x3333FF }
 		].map((noteType, index: number) => {
 			const c = new PIXI.Container();
 			const rect = new PIXI.Graphics();
@@ -372,40 +384,61 @@ export class Scene_Title extends Scene {
 			}
 			// Note還在畫面上時且距離還沒有很遠時繪製
 			// 會繪製兩秒內的Note
-			if (this.time <= n.time && n.time - this.time < this.DISPLAYSECONDS) {
-				const lineSize = this.getlineSizeByTime(n.time, 16);
+			if (this.time <= n.time && n.time - this.time < this.DISPLAYSECONDS ||
+				// 長條的判定
+				n.nextNode && (n.time <= this.time && this.time <= n.nextNode.time)) {
+
 				const alpha = this.selectedNote !== n ? 1 : 1 + Math.sin(new Date().getTime() / 100) * 0.5;
-				// 接
-				switch (n.type) {
-					case 2:
-						this.noteGraphics.lineStyle(lineSize, 0xcccc00, alpha);
-						break;
-					case 3:
-						// 長壓
-						this.noteGraphics.lineStyle(lineSize, 0x00aaaa, alpha);
-						break;
-					case 4:
-						// 左旋
-						this.noteGraphics.lineStyle(lineSize, 0xff3333, alpha);
-						break;
-					case 5:
-						// 右旋
-						this.noteGraphics.lineStyle(lineSize, 0x3333ff, alpha);
-						break;
-					default:
-						this.noteGraphics.lineStyle(lineSize, 0xffffff, alpha);
+				if (n.time > this.time) {
+					const lineSize = this.getlineSizeByTime(n.time < this.time ? this.time : n.time, 16);
+					this.setLineStyleByType(this.noteGraphics, n.type, lineSize, alpha);
+
+					// x, y, 半徑
+					const rad = this.getRadiusByTime(n.time);
+
+					// / 57.2958
+					const rotation = n.rotation / 57.2958;
+					// 角度0時為3點鐘方向
+
+					this.noteGraphics.arc(0, 0, rad,
+						-0.19 * (n.size || 1) + rotation - Math.PI / 2,
+						0.19 * (n.size || 1) + rotation - Math.PI / 2);
+					// 針對長條下一個節點的繪製
+				}
+				if (n.nextNode && n.type === NoteType.LONG) {
+					// 開始點的繪製
+					// this.noteGraphics.lineStyle(0);
+					this.noteGraphics.beginFill(0x00aaaa, alpha / 2);
+
+					const nextNode = n.nextNode;
+
+					if (this.time > n.time) {
+						// 目前時間晚於起始點則計算目前位置
+						const currentRotation = (this.getCurrentRailRotationByTime(n, this.time)) / 57.2958;
+						console.log(currentRotation);
+						this.noteGraphics.arc(0, 0, this.getRadiusByTime(this.time),
+							-0.19 * (n.size || 1) + currentRotation - Math.PI / 2,
+							0.19 * (n.size || 1) + currentRotation - Math.PI / 2);
+					}
+					// 非線性比較難搞
+					//if (nextNode.mathFunc !== 'linear') {
+
+					//} else {
+					const maxTime = this.time + this.DISPLAYSECONDS;
+					const nextNodeTime = nextNode.time > maxTime ? maxTime : nextNode.time
+					const nextNodeRad = this.getRadiusByTime(nextNodeTime);
+					const nextRotation = (n.rotation + nextNode.delta) / 57.2958;
+					this.noteGraphics.arc(0, 0, nextNodeRad,
+						-0.19 * (n.size || 1) + nextRotation - Math.PI / 2,
+						0.19 * (n.size || 1) + nextRotation - Math.PI / 2);
+					//}
+					this.noteGraphics.endFill();
+					this.noteGraphics.endHole();
+				} else {
+					// 沒有endHole會讓Arc跟下一個繪製的Arc連在一起
+					this.noteGraphics.endHole();
 				}
 
-				// x, y, 半徑
-				const rad = this.getRadiusByTime(n.time);
-
-				// / 57.2958
-				const rotation = n.rotation / 57.2958;
-				// 角度0時為3點鐘方向
-				this.noteGraphics.arc(0, 0, rad,
-					-0.19 * (n.size || 1) + rotation - Math.PI / 2,
-					0.19 * (n.size || 1) + rotation - Math.PI / 2);
-				this.noteGraphics.endHole();
 			}
 		});
 	}
@@ -448,32 +481,7 @@ export class Scene_Title extends Scene {
 	updatePreviewGraphics() {
 		this.previewGraphics.clear();
 		const lineSize = this.getlineSizeByTime(this.previewTime, 16);
-
-		switch (this.noteType) {
-			// 單點
-			case 1:
-				this.previewGraphics.lineStyle(lineSize, 0xffffff, 1);
-				break;
-			// 接
-			case 2:
-				this.previewGraphics.lineStyle(lineSize, 0xaaaa00, 1);
-				break;
-			// 長壓
-			case 3:
-				this.previewGraphics.lineStyle(lineSize, 0x00aaaa, 1);
-				break;
-			case 4:
-				// 左旋
-				this.previewGraphics.lineStyle(lineSize, 0xff3333, 1);
-				break;
-			// 右旋
-			case 5:
-				this.previewGraphics.lineStyle(lineSize, 0x3333ff, 1);
-				break;
-			default:
-				this.previewGraphics.lineStyle(lineSize, 0x333333, 1);
-		}
-
+		this.setLineStyleByType(this.previewGraphics, this.noteType, lineSize, 1);
 		this.previewGraphics.arc(0, 0, this.getRadiusByTime(this.previewTime),
 			-0.19 * (this.noteSize) - Math.PI / 2,
 			0.19 * (this.noteSize) - Math.PI / 2);
@@ -518,33 +526,39 @@ export class Scene_Title extends Scene {
 		this.notes.forEach(n => {
 			// Note還在畫面上時且距離還沒有很遠時繪製
 			// 會繪製兩秒內的Note
-			if (this.time <= n.time && n.time - this.time < this.DISPLAYSECONDS * 2) {
-				const alpha = this.selectedNote !== n ? 1 : 1 + Math.sin(new Date().getTime() / 100) * 0.5;
-				// 接
-				switch (n.type) {
-					case 2:
-						this.classicNoteGraphics.lineStyle(2, 0xcccc00, alpha);
-						break;
-					case 3:
-						// 長壓
-						this.classicNoteGraphics.lineStyle(2, 0x00aaaa, alpha);
-						break;
-					case 4:
-						// 左旋
-						this.classicNoteGraphics.lineStyle(2, 0xff3333, alpha);
-						break;
-					case 5:
-						// 右旋
-						this.classicNoteGraphics.lineStyle(2, 0x3333ff, alpha);
-						break;
-					default:
-						this.classicNoteGraphics.lineStyle(2, 0xffffff, alpha);
-				}
-				const y = height * (1 - (n.time - this.time) / this.DISPLAYSECONDS / 2);
-				this.classicNoteGraphics.beginFill(this.classicNoteGraphics.line.color, 1);
-				this.classicNoteGraphics.drawRect(0, y - noteHeight, noteWidth, noteHeight);
-				this.classicNoteGraphics.endFill();
+			const displaySeconds = this.DISPLAYSECONDS * 2;
+			if (this.time <= n.time && n.time - this.time < displaySeconds ||
+				// 長條的判定
+				n.nextNode && (n.time <= this.time && this.time <= n.nextNode.time)) {
 
+				const alpha = this.selectedNote !== n ? 1 : 1 + Math.sin(new Date().getTime() / 100) * 0.5;
+
+				this.setLineStyleByType(this.classicNoteGraphics, n.type, 2, alpha);
+
+				// 一般Note的繪製
+				if (n.time > this.time) {
+					const y = height * (1 - (n.time - this.time) / displaySeconds);
+					this.classicNoteGraphics.beginFill(this.classicNoteGraphics.line.color, 1);
+					this.classicNoteGraphics.drawRect(0, y - noteHeight, noteWidth, noteHeight);
+					this.classicNoteGraphics.endFill();
+				}
+				// 針對長條的繪製
+				if (n.type === NoteType.LONG && n.nextNode && this.time + displaySeconds > n.nextNode.time && this.time < n.nextNode.time) {
+					const nextNode = n.nextNode;
+					// 現在時間晚於Note開始時間時, 使用目前時間, 否則使用Note開始時間
+					const startTime = this.time > n.time ? this.time : n.time;
+					// Note終點比可視時間範圍還晚時, 使用可視範圍, 否則使用下一節點時間
+					const finishTime = this.time + displaySeconds < nextNode.time ? this.time + displaySeconds : nextNode.time;
+					// Note終點比可視時間範圍還晚時, 顯示於最上面, 否則使用下一節點時間
+					const timeLengthPercent = (finishTime - startTime) / displaySeconds;
+					const noteHeight = height * timeLengthPercent;
+					const y = (this.time + displaySeconds < nextNode.time) ? 0 : height * (1 - (startTime - this.time) / displaySeconds) - noteHeight;
+
+					this.classicNoteGraphics.beginFill(this.classicNoteGraphics.line.color, 0.5);
+					this.classicNoteGraphics.drawRect(noteWidth + 8, y, noteWidth, noteHeight);
+					this.classicNoteGraphics.endFill();
+
+				}
 			}
 		});
 	}
@@ -563,15 +577,43 @@ export class Scene_Title extends Scene {
 	// 以時間和角度取得點擊到的Note
 	getNoteByTimeAndRotation(time, rotation) {
 		return this.notes.find(n =>
+			// 必須要是在畫面上的Note且按到的時間大於要選的Note的時間
 			n.time >= this.time && time >= n.time &&
+			// 且避免按錯, 按的時間與Note時間間隔要小於節拍分割
 			Math.abs(n.time - time) <= (240 / this.BPM / this.assistDividerDivideNumber) &&
-			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * n.size + this.DEGREEDIV * this.noteSize
+			// 而且目前選擇範圍要跟Note顯示範圍重合
+			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * (n.size + this.noteSize) / 2
 		);
+	}
+
+	setLineStyleByType(graphics: PIXI.Graphics, type: NoteType, lineSize: number, alpha: number) {
+		switch (type) {
+			// 接
+			case NoteType.CATCH:
+				graphics.lineStyle(lineSize, 0xcccc00, alpha);
+				break;
+			case NoteType.LONG:
+				// 長壓
+				graphics.lineStyle(lineSize, 0x00aaaa, alpha);
+				break;
+			case NoteType.LSPIN:
+				// 左旋
+				graphics.lineStyle(lineSize, 0xff3333, alpha);
+				break;
+			case NoteType.RSPIN:
+				// 右旋
+				graphics.lineStyle(lineSize, 0x3333ff, alpha);
+				break;
+			// 單壓
+			default:
+				graphics.lineStyle(lineSize, 0xffffff, alpha);
+		}
 	}
 
 	// 目前0度是在上面(12點鐘方向)
 	onMouseDown(event) {
 		console.log(event);
+		const lastSelectedNote = this.selectedNote;
 		this.selectedNote = this.getNoteByTimeAndRotation(this.previewTime, this.previewGraphics.rotation * 57.2958);
 
 		console.log(this.selectedNote);
@@ -581,20 +623,44 @@ export class Scene_Title extends Scene {
 			if (this.previewTime < this.time) {
 				return;
 			}
+			// 已有綁定長條時移除長條
+			if (this.ctrl && lastSelectedNote.nextNode && lastSelectedNote.type === NoteType.LONG) {
+				lastSelectedNote.nextNode = null;
+				return;
+			}
 			if (!this.selectedNote) {
 				// 放置note
-				const newNote = {
+				const newNote: INote = {
 					time: this.previewTime,
 					type: this.noteType,
-					rotation: Math.round(this.previewGraphics.rotation * 57.2958),
+
+					rotation: Math.round(this.previewGraphics.rotation * 57.2958 + 360) % 360,
 					size: this.noteSize
 				};
-				this.notes.push(newNote);
 				this.selectedNote = newNote;
+				if (this.ctrl && newNote.type === NoteType.LONG && lastSelectedNote.type === NoteType.LONG) {
+					// 將上一個Note跟目前的Note接一起
+					lastSelectedNote.nextNode = {
+						time: this.selectedNote.time,
+						delta: this.selectedNote.rotation - lastSelectedNote.rotation,
+						size: this.selectedNote.size
+					};
+				}
+				this.notes.push(newNote);
+
 			} else {
-				// 移除Note
-				this.notes = this.notes.filter(n => n !== this.selectedNote);
-				this.selectedNote = null;
+				if (this.ctrl && lastSelectedNote.type === NoteType.LONG && this.selectedNote.type === NoteType.LONG) {
+					// 將上一個Note跟目前的Note接一起
+					lastSelectedNote.nextNode = {
+						time: this.selectedNote.time,
+						delta: this.selectedNote.rotation - lastSelectedNote.rotation,
+						size: this.selectedNote.size
+					};
+				} else {
+					// 移除Note
+					this.notes = this.notes.filter(n => n !== this.selectedNote);
+					this.selectedNote = null;
+				}
 			}
 		}
 	}
@@ -615,40 +681,43 @@ export class Scene_Title extends Scene {
 		// 240 / BPM = 每小節秒數
 		this.updatePreviewTime(distance);
 		// 把角度以刻度分開
-		this.previewGraphics.rotation = Math.round(dir * 57.2958 / this.DEGREEDIV) * this.DEGREEDIV / 57.2958;
+		this.previewGraphics.rotation = (Math.round(dir * 57.2958 / this.DEGREEDIV) * this.DEGREEDIV + 360) % 360 / 57.2958;
 
-		this.debugText.text = `${this.previewTime}}`;
 	}
 
 	onKeyDown(event: KeyboardEvent) {
 		console.log(event);
 		const v = this.music.seek();
+		if (event.ctrlKey) {
+			this.ctrl = true;
+			this.ctrlText.alpha = 1;
+		}
 		switch (event.code) {
 			// 設定Note
 			case 'KeyQ':
 				// 單點
-				this.noteType = 1;
-				if (this.selectedNote) { this.selectedNote.type = 1 };
+				this.noteType = NoteType.CLICK;
+				if (this.selectedNote) { this.selectedNote.type = NoteType.CLICK };
 				break;
 			case 'KeyW':
 				// Catch
-				this.noteType = 2;
-				if (this.selectedNote) { this.selectedNote.type = 2 };
+				this.noteType = NoteType.CATCH;
+				if (this.selectedNote) { this.selectedNote.type = NoteType.CATCH };
 				break;
 			case 'KeyE':
 				// 長壓
-				this.noteType = 3;
-				if (this.selectedNote) { this.selectedNote.type = 3 };
+				this.noteType = NoteType.LONG;
+				if (this.selectedNote) { this.selectedNote.type = NoteType.LONG };
 				break;
 			case 'KeyR':
 				// 左旋
-				this.noteType = 4;
-				if (this.selectedNote) { this.selectedNote.type = 4 };
+				this.noteType = NoteType.LSPIN;
+				if (this.selectedNote) { this.selectedNote.type = NoteType.LSPIN };
 				break;
 			case 'KeyT':
 				// 右旋
-				this.noteType = 5;
-				if (this.selectedNote) { this.selectedNote.type = 5 };
+				this.noteType = NoteType.RSPIN;
+				if (this.selectedNote) { this.selectedNote.type = NoteType.RSPIN };
 				break;
 
 			// 設定Note大小
@@ -672,6 +741,7 @@ export class Scene_Title extends Scene {
 				if (event.ctrlKey) {
 					// 存檔
 					this.saveChart();
+					event.preventDefault();
 				}
 				break;
 			case 'Delete':
@@ -705,6 +775,12 @@ export class Scene_Title extends Scene {
 				break;
 		}
 	}
+	onKeyUp(event: KeyboardEvent) {
+		if (!event.ctrlKey) {
+			this.ctrl = false;
+			this.ctrlText.alpha = 0;
+		}
+	}
 
 	onMouseWheel(e: Event) {
 		const event = e as WheelEvent;
@@ -718,12 +794,15 @@ export class Scene_Title extends Scene {
 		}
 	}
 	saveChart() {
+
+		// 存檔時以時間將Note做排序
+		this.notes.sort((a, b) => a.time - b.time);
 		const output: IChart = {
 			name: '',
 			diff: 'normal',
 			charter: 'xFly',
 			level: 7,
-			notes: this.notes.sort((a, b) => a.time - b.time),
+			notes: this.notes,
 			rotates: [],
 			version: Version,
 			beatList: [
@@ -829,12 +908,35 @@ export class Scene_Title extends Scene {
 		return passedBPMTime + Math.floor((this.time - passedBPMTime) / stepTime) * (stepTime);
 	}
 
-	// TODO: 以時間和Note取得目前長條所在的角度
-	getCurrentRailRotationByTime(note: INote, time: number) {
-		// 壓根兒還沒開始或已經超出最後一個節點位置了
-		if (time < note.time || time > note.nodes[note.nodes.length - 1].time) {
-			return null;
+	// : 以時間和Note取得目前長條所在的角度
+	getCurrentRailRotationByTime(note: INote, time: number): number {
+		// 壓根兒還沒開始或根本沒下一個節點
+		if (time < note.time || !note.nextNode) {
+			return note.rotation;
 		}
+		const nextNode = note.nextNode;
+		// 或已經超出最後一個節點位置了
+		if (time > nextNode.time) {
+			return note.rotation + nextNode.delta;
+		}
+
+		let movement = 0;
+		// 真的都不是才進行計算
+		switch (nextNode.mathFunc) {
+			case 'Si':
+				movement = nextNode.delta * 1 - (
+					Math.sin(-Math.PI / 2 * (1 - (time - nextNode.time) / (note.nextNode.time - note.time)))
+				);
+				break;
+			case 'So':
+				movement = nextNode.delta * Math.sin(Math.PI / 2 * (1 - (nextNode.time - time) / (note.nextNode.time - note.time)));
+				break;
+			// linear 線性
+			default:
+				movement = nextNode.delta * (1 - (nextNode.time - time) / (note.nextNode.time - note.time));
+
+		}
+		return note.rotation + movement;
 	}
 }
 

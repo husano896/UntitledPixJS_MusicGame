@@ -35,9 +35,11 @@ export interface INote {
 	// 尺寸
 	size?: number;
 	// 給長條使用：長條節點
-	nodes?: Array<ILongNoteNode>;
+	// nodes?: Array<ILongNoteNode>;
 	// 角度
 	rotation: number;
+	// 20220224：只記錄下一個節點的位置
+	nextNode?: ILongNoteNode;
 }
 
 // 檯面旋轉點
