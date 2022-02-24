@@ -118,8 +118,8 @@ export class Scene_Title extends Scene {
 		this.judgeBar.addChild(this.hiSpeedText);
 
 		this.ctrlText = new PIXI.Text(`CTRL開啟：\n選擇Note後對要連接的長條節點按右鍵以連接\n對有移動的Note按中鍵以變更方向`, {
-			fontFamily: 'Arial', stroke: '#ffbbbb',
-			strokeThickness: 1, fontSize: 30, fill: 0xff8888, align: 'center'
+			fontFamily: 'Arial', stroke: '#ff7777',
+			strokeThickness: 1, fontSize: 24, fill: 0xff8888, align: 'center'
 		});
 		this.ctrlText.anchor.set(0.5);
 		this.ctrlText.y = 26;
@@ -355,7 +355,10 @@ export class Scene_Title extends Scene {
 
 	getlineSizeByTime(timeSec, maxSize) {
 		// displayseconds更小時, rad會變成負值而不顯示
-		return maxSize * (1 - this.easeInSine((this.time - timeSec) / this.DISPLAYSECONDS));
+		if (this.time > timeSec) {
+			return 0;
+		}
+		return maxSize * (1 - this.easeInSine((timeSec - this.time) / this.DISPLAYSECONDS));
 	}
 
 	getRadiusByTime(timeSec: number) {
@@ -364,7 +367,7 @@ export class Scene_Title extends Scene {
 		}
 		// displayseconds更小時, rad會變成負值而不顯示
 		// 修正透視得把時間影響scale的係數調小, 這邊為0.8 + 基礎0.2
-		return (this.judgeBar.height / 2) * (this.easeInSine(1 - (timeSec - this.time) / this.DISPLAYSECONDS) * 0.9 + 0.1);
+		return (GameConsts.height / 2) * (this.easeInSine(1 - (timeSec - this.time) / this.DISPLAYSECONDS));
 	}
 
 	updateJudgeBar() {
@@ -386,7 +389,7 @@ export class Scene_Title extends Scene {
 			}
 			// Note還在畫面上時且距離還沒有很遠時繪製
 			// 會繪製兩秒內的Note
-			if (this.time <= n.time && n.time - this.time < this.DISPLAYSECONDS ||
+			if (this.time <= n.time && n.time - this.time <= this.DISPLAYSECONDS ||
 				// 長條的判定
 				n.nextNode && (n.time <= this.time && this.time <= n.nextNode.time)) {
 
@@ -401,17 +404,17 @@ export class Scene_Title extends Scene {
 					// / 57.2958
 					const rotation = n.rotation / 57.2958;
 					// 角度0時為3點鐘方向
-
 					this.noteGraphics.arc(0, 0, rad,
 						-0.19 * (n.size || 1) + rotation - Math.PI / 2,
 						0.19 * (n.size || 1) + rotation - Math.PI / 2);
 					// 針對長條下一個節點的繪製
+					if (n.nextNode) {
+						this.noteGraphics.beginFill(0x00aaaa, alpha / 2);
+					}
 				}
 				if (n.nextNode && n.type === NoteType.LONG) {
 					// 開始點的繪製
 					// this.noteGraphics.lineStyle(0);
-					this.noteGraphics.beginFill(0x00aaaa, alpha / 2);
-
 					const nextNode = n.nextNode;
 
 					if (this.time > n.time) {
@@ -421,6 +424,7 @@ export class Scene_Title extends Scene {
 							-0.19 * (n.size || 1) + currentRotation - Math.PI / 2,
 							0.19 * (n.size || 1) + currentRotation - Math.PI / 2);
 						this.debugText.text = `${currentRotation}`;
+						this.noteGraphics.beginFill(0x00aaaa, alpha / 2);
 					}
 					// 非線性比較難搞
 					//if (nextNode.mathFunc !== 'linear') {
@@ -439,6 +443,7 @@ export class Scene_Title extends Scene {
 					this.noteGraphics.endHole();
 				} else {
 					// 沒有endHole會讓Arc跟下一個繪製的Arc連在一起
+					this.noteGraphics.endFill();
 					this.noteGraphics.endHole();
 				}
 
@@ -530,7 +535,7 @@ export class Scene_Title extends Scene {
 			// Note還在畫面上時且距離還沒有很遠時繪製
 			// 會繪製兩秒內的Note
 			const displaySeconds = this.DISPLAYSECONDS * 2;
-			if (this.time <= n.time && n.time - this.time < displaySeconds ||
+			if (this.time <= n.time && n.time - this.time <= displaySeconds ||
 				// 長條的判定
 				n.nextNode && (n.time <= this.time && this.time <= n.nextNode.time)) {
 
@@ -571,7 +576,7 @@ export class Scene_Title extends Scene {
 	updatePreviewTime(distance: number) {
 
 		const height = this.judgeBar.height;
-		const selectedTime = Math.round(
+		const selectedTime = Math.floor(
 			(this.time + this.DISPLAYSECONDS *
 				(
 					(this.easeInSine((height / 2 - distance) / (height / 2)))
@@ -704,7 +709,7 @@ export class Scene_Title extends Scene {
 		const v = this.music.seek();
 		if (event.ctrlKey) {
 			this.ctrl = true;
-			this.ctrlText.alpha = 1;
+			this.ctrlText.alpha = 0.5;
 		}
 		switch (event.code) {
 			// 設定Note
