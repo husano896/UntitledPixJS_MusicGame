@@ -117,7 +117,10 @@ export class Scene_Title extends Scene {
 		this.hiSpeedText.anchor.set(0.5);
 		this.judgeBar.addChild(this.hiSpeedText);
 
-		this.ctrlText = new PIXI.Text(`CTRL開啟`, { fontFamily: 'Arial', fontSize: 30, fill: 0xff5555, align: 'center' });
+		this.ctrlText = new PIXI.Text(`CTRL開啟：\n選擇Note後對要連接的長條節點按右鍵以連接\n對有移動的Note按中鍵以變更方向`, {
+			fontFamily: 'Arial', stroke: '#ffbbbb',
+			strokeThickness: 1, fontSize: 30, fill: 0xff8888, align: 'center'
+		});
 		this.ctrlText.anchor.set(0.5);
 		this.ctrlText.y = 26;
 		this.ctrlText.alpha = 0;
@@ -352,7 +355,7 @@ export class Scene_Title extends Scene {
 
 	getlineSizeByTime(timeSec, maxSize) {
 		// displayseconds更小時, rad會變成負值而不顯示
-		return maxSize * (1 - (timeSec - this.time) / this.DISPLAYSECONDS);
+		return maxSize * (1 - this.easeInSine((this.time - timeSec) / this.DISPLAYSECONDS));
 	}
 
 	getRadiusByTime(timeSec: number) {
@@ -361,8 +364,7 @@ export class Scene_Title extends Scene {
 		}
 		// displayseconds更小時, rad會變成負值而不顯示
 		// 修正透視得把時間影響scale的係數調小, 這邊為0.8 + 基礎0.2
-		return (GameConsts.height / 2) * (1 - (timeSec - this.time) / this.DISPLAYSECONDS) * 0.8 +
-			(GameConsts.height / 2) * 0.2;
+		return (this.judgeBar.height / 2) * (this.easeInSine(1 - (timeSec - this.time) / this.DISPLAYSECONDS) * 0.9 + 0.1);
 	}
 
 	updateJudgeBar() {
@@ -415,10 +417,10 @@ export class Scene_Title extends Scene {
 					if (this.time > n.time) {
 						// 目前時間晚於起始點則計算目前位置
 						const currentRotation = (this.getCurrentRailRotationByTime(n, this.time)) / 57.2958;
-						console.log(currentRotation);
 						this.noteGraphics.arc(0, 0, this.getRadiusByTime(this.time),
 							-0.19 * (n.size || 1) + currentRotation - Math.PI / 2,
 							0.19 * (n.size || 1) + currentRotation - Math.PI / 2);
+						this.debugText.text = `${currentRotation}`;
 					}
 					// 非線性比較難搞
 					//if (nextNode.mathFunc !== 'linear') {
@@ -427,6 +429,7 @@ export class Scene_Title extends Scene {
 					const maxTime = this.time + this.DISPLAYSECONDS;
 					const nextNodeTime = nextNode.time > maxTime ? maxTime : nextNode.time
 					const nextNodeRad = this.getRadiusByTime(nextNodeTime);
+
 					const nextRotation = (n.rotation + nextNode.delta) / 57.2958;
 					this.noteGraphics.arc(0, 0, nextNodeRad,
 						-0.19 * (n.size || 1) + nextRotation - Math.PI / 2,
@@ -569,7 +572,12 @@ export class Scene_Title extends Scene {
 
 		const height = this.judgeBar.height;
 		const selectedTime = Math.round(
-			(this.time + this.DISPLAYSECONDS * (height / 2 - distance) / (height / 2)) / (240 / this.BPM / this.assistDividerDivideNumber)
+			(this.time + this.DISPLAYSECONDS *
+				(
+					(this.easeInSine((height / 2 - distance) / (height / 2)))
+				)
+			) /
+			(240 / this.BPM / this.assistDividerDivideNumber)
 		) * (240 / this.BPM / this.assistDividerDivideNumber);
 
 		this.previewTime = selectedTime;
@@ -617,6 +625,7 @@ export class Scene_Title extends Scene {
 		this.selectedNote = this.getNoteByTimeAndRotation(this.previewTime, this.previewGraphics.rotation * 57.2958);
 
 		console.log(this.selectedNote);
+		// 0 左 1 中 2 右
 		// 按下右鍵時
 		if (event.data.button === 2) {
 			// 不可以放置比開始點還早的note
@@ -661,6 +670,11 @@ export class Scene_Title extends Scene {
 					this.notes = this.notes.filter(n => n !== this.selectedNote);
 					this.selectedNote = null;
 				}
+			}
+		} else if (event.data.button === 1) {
+			// 中鍵變更移動方向
+			if (this.ctrl && lastSelectedNote.type === NoteType.LONG && lastSelectedNote.nextNode) {
+				lastSelectedNote.nextNode.delta += lastSelectedNote.nextNode.delta > 0 ? -360 : 360
 			}
 		}
 	}
@@ -924,19 +938,24 @@ export class Scene_Title extends Scene {
 		// 真的都不是才進行計算
 		switch (nextNode.mathFunc) {
 			case 'Si':
-				movement = nextNode.delta * 1 - (
-					Math.sin(-Math.PI / 2 * (1 - (time - nextNode.time) / (note.nextNode.time - note.time)))
-				);
-				break;
+			// movement = nextNode.delta * (1 - (
+			// 	Math.sin(-Math.PI / 2 * (1 - (time - nextNode.time) / (note.nextNode.time - note.time)))
+			// ));
+			// break;
 			case 'So':
-				movement = nextNode.delta * Math.sin(Math.PI / 2 * (1 - (nextNode.time - time) / (note.nextNode.time - note.time)));
-				break;
+			// movement = nextNode.delta * Math.sin(Math.PI / 2 * (1 - (nextNode.time - time) / (note.nextNode.time - note.time)));
+			// break;
 			// linear 線性
 			default:
 				movement = nextNode.delta * (1 - (nextNode.time - time) / (note.nextNode.time - note.time));
 
 		}
 		return note.rotation + movement;
+	}
+
+	// https://easings.net/zh-tw
+	easeInSine(x: number): number {
+		return 1 - Math.cos((x * Math.PI) / 2);
 	}
 }
 
