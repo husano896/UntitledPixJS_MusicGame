@@ -34,7 +34,7 @@ export interface INote {
 	time: number;
 	// 尺寸
 	size?: number;
-	// 給長條使用：長條節點
+	// 棄用：給長條使用：長條節點
 	// nodes?: Array<ILongNoteNode>;
 	// 角度
 	rotation: number;

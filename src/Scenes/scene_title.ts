@@ -1,4 +1,4 @@
-import { Window_BPM } from './window_bpm';
+import { Window_BPM, Window_Meta } from '../Windows';
 import * as PIXI from 'pixi.js';
 
 import { Version, GameConsts } from '../constants';
@@ -6,7 +6,7 @@ import { IChart, INote, NoteType } from '../Interfaces/IChart';
 import { Scene } from './scene';
 import $R from '../resources';
 import { Howl } from 'howler';
-
+import { MathFunc } from '../Utils/MathFunc';
 export class Scene_Title extends Scene {
 	// 小節線
 	assistDivider: PIXI.Graphics;
@@ -46,9 +46,6 @@ export class Scene_Title extends Scene {
 	// 音樂BPM
 	BPMList: Array<[number, number]>;
 
-	// 計算用：每拍秒數
-	secPerBeat: number;
-
 	// 輔助小節線繪製間格 ( 8 = 1/8, 16 = 1/16)
 	assistDividerDivideNumber = 4;
 
@@ -81,6 +78,12 @@ export class Scene_Title extends Scene {
 
 	ctrl: boolean;
 
+	// meta
+	songName: string = '';
+	charter: string = '';
+	level: number = 1;
+	diff: string = '';
+
 	// 讀取資源區
 	constructor() {
 		super();
@@ -97,7 +100,7 @@ export class Scene_Title extends Scene {
 		this.judgeBar.x = GameConsts.height / 2;
 		this.judgeBar.y = GameConsts.height / 2;
 		this.judgeBar.lineStyle(16, 0x2266ff);
-		this.judgeBar.drawCircle(0, 0, GameConsts.height / 2);
+		this.judgeBar.drawCircle(0, 0, this.judgeBarRadius);
 
 		// 小節線
 		this.assistDivider = new PIXI.Graphics();
@@ -117,14 +120,14 @@ export class Scene_Title extends Scene {
 		this.hiSpeedText.anchor.set(0.5);
 		this.judgeBar.addChild(this.hiSpeedText);
 
-		this.ctrlText = new PIXI.Text(`CTRL開啟：\n選擇Note後對要連接的長條節點按右鍵以連接\n對有移動的Note按中鍵以變更方向`, {
-			fontFamily: 'Arial', stroke: '#ff7777',
-			strokeThickness: 1, fontSize: 24, fill: 0xff8888, align: 'center'
+		this.ctrlText = new PIXI.Text(`CTRL開啟：選擇Note後對要連接的長條節點按右鍵以連接，對有移動的Note按中鍵以變更方向`, {
+			fontFamily: 'Arial', stroke: '#ffffff',
+			strokeThickness: 1, fontSize: 18, fill: 0xff8888, align: 'left'
 		});
 		this.ctrlText.anchor.set(0.5);
-		this.ctrlText.y = 26;
+		this.ctrlText.y = GameConsts.height - 32;
 		this.ctrlText.alpha = 0;
-		this.judgeBar.addChild(this.ctrlText);
+		this.addChild(this.ctrlText);
 
 		// 整個圈的Container
 		this.addChild(this.judgeBar);
@@ -140,7 +143,6 @@ export class Scene_Title extends Scene {
 		// 一刻度 = 15度
 		this.BPMList = [[0, 165]];
 
-		this.secPerBeat = 60 / this.BPM;
 		this.music = $R.Audio.music;
 		this.notes = [];
 
@@ -190,6 +192,15 @@ export class Scene_Title extends Scene {
 		this.classicNoteGraphics.x = noteToolBar.x - 144 - 32;
 		this.classicNoteGraphics.y = noteToolBar.y;
 		this.addChild(this.classicNoteGraphics);
+
+		// 譜面資訊設定
+		const MetaSetting = new PIXI.Text(`譜面資訊設定`, { fontFamily: 'Arial', fontSize: 24, fill: 0xffffff, align: 'left' });
+		MetaSetting.x = GameConsts.width - MetaSetting.width;
+		MetaSetting.y = GameConsts.height - 24 - 8;
+		MetaSetting.interactive = true;
+		MetaSetting.buttonMode = true;
+		MetaSetting.on('pointerdown', this.changeMeta.bind(this));
+		this.addChild(MetaSetting);
 
 		// 重整前提示
 		window.onbeforeunload = () => confirm('Are you sure you want to quit?');
@@ -358,16 +369,55 @@ export class Scene_Title extends Scene {
 		if (this.time > timeSec) {
 			return 0;
 		}
-		return maxSize * (1 - this.easeInSine((timeSec - this.time) / this.DISPLAYSECONDS));
+		return maxSize * (1 - MathFunc.easeInSine((timeSec - this.time) / this.DISPLAYSECONDS));
 	}
 
 	getRadiusByTime(timeSec: number) {
 		if (this.time > timeSec) {
 			return 0;
 		}
-		// displayseconds更小時, rad會變成負值而不顯示
-		// 修正透視得把時間影響scale的係數調小, 這邊為0.8 + 基礎0.2
-		return (GameConsts.height / 2) * (this.easeInSine(1 - (timeSec - this.time) / this.DISPLAYSECONDS));
+		return this.judgeBarRadius * (MathFunc.easeInSine(1 - Math.max(0, (timeSec - this.time)) / this.DISPLAYSECONDS));
+	}
+	// 以時間和角度取得點擊到的Note
+	getNoteByTimeAndRotation(time: number, rotation: number) {
+		return this.notes.find(n =>
+			// 必須要是在畫面上的Note且按到的時間大於要選的Note的時間
+			n.time >= this.time && time >= n.time &&
+			// 且避免按錯, 按的時間與Note時間間隔要小於節拍分割
+			Math.abs(n.time - time) <= (240 / this.BPM / this.assistDividerDivideNumber) &&
+			// 而且目前選擇範圍要跟Note顯示範圍重合
+			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * (n.size + this.noteSize) / 2
+		);
+	}
+	// : 以時間和Note取得目前長條所在的角度
+	getCurrentRailRotationByTime(note: INote, time: number): number {
+		// 壓根兒還沒開始或根本沒下一個節點
+		if (time < note.time || !note.nextNode) {
+			return note.rotation;
+		}
+		const nextNode = note.nextNode;
+		// 或已經超出最後一個節點位置了
+		if (time > nextNode.time) {
+			return note.rotation + nextNode.delta;
+		}
+
+		let movement = 0;
+		// 真的都不是才進行計算
+		switch (nextNode.mathFunc) {
+			case 'Si':
+			// movement = nextNode.delta * (1 - (
+			// 	Math.sin(-Math.PI / 2 * (1 - (time - nextNode.time) / (note.nextNode.time - note.time)))
+			// ));
+			// break;
+			case 'So':
+			// movement = nextNode.delta * Math.sin(Math.PI / 2 * (1 - (nextNode.time - time) / (note.nextNode.time - note.time)));
+			// break;
+			// linear 線性
+			default:
+				movement = nextNode.delta * (1 - (nextNode.time - time) / (note.nextNode.time - note.time));
+
+		}
+		return note.rotation + movement;
 	}
 
 	updateJudgeBar() {
@@ -423,7 +473,6 @@ export class Scene_Title extends Scene {
 						this.noteGraphics.arc(0, 0, this.getRadiusByTime(this.time),
 							-0.19 * (n.size || 1) + currentRotation - Math.PI / 2,
 							0.19 * (n.size || 1) + currentRotation - Math.PI / 2);
-						this.debugText.text = `${currentRotation}`;
 						this.noteGraphics.beginFill(0x00aaaa, alpha / 2);
 					}
 					// 非線性比較難搞
@@ -473,8 +522,7 @@ export class Scene_Title extends Scene {
 			// 小節線
 			const isOnBarLine = v < 0.01 || v > 0.99;
 			// 拍子線
-			const secPerBeat = (60 / this.BPM);
-			const v2 = (time % secPerBeat) / secPerBeat;
+			const v2 = (time % this.secPerBeat) / this.secPerBeat;
 			const isOnBarBeat = v2 < 0.01 || v2 > 0.99;
 
 			const lineSize = this.getlineSizeByTime(time, isOnBarLine ? 8 : 4);
@@ -579,7 +627,7 @@ export class Scene_Title extends Scene {
 		const selectedTime = Math.floor(
 			(this.time + this.DISPLAYSECONDS *
 				(
-					(this.easeInSine((height / 2 - distance) / (height / 2)))
+					(MathFunc.easeInSine((height / 2 - distance) / (height / 2)))
 				)
 			) /
 			(240 / this.BPM / this.assistDividerDivideNumber)
@@ -587,17 +635,7 @@ export class Scene_Title extends Scene {
 
 		this.previewTime = selectedTime;
 	}
-	// 以時間和角度取得點擊到的Note
-	getNoteByTimeAndRotation(time, rotation) {
-		return this.notes.find(n =>
-			// 必須要是在畫面上的Note且按到的時間大於要選的Note的時間
-			n.time >= this.time && time >= n.time &&
-			// 且避免按錯, 按的時間與Note時間間隔要小於節拍分割
-			Math.abs(n.time - time) <= (240 / this.BPM / this.assistDividerDivideNumber) &&
-			// 而且目前選擇範圍要跟Note顯示範圍重合
-			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * (n.size + this.noteSize) / 2
-		);
-	}
+
 
 	setLineStyleByType(graphics: PIXI.Graphics, type: NoteType, lineSize: number, alpha: number) {
 		switch (type) {
@@ -709,7 +747,7 @@ export class Scene_Title extends Scene {
 		const v = this.music.seek();
 		if (event.ctrlKey) {
 			this.ctrl = true;
-			this.ctrlText.alpha = 0.5;
+			this.ctrlText.alpha = 1;
 		}
 		switch (event.code) {
 			// 設定Note
@@ -817,10 +855,10 @@ export class Scene_Title extends Scene {
 		// 存檔時以時間將Note做排序
 		this.notes.sort((a, b) => a.time - b.time);
 		const output: IChart = {
-			name: '',
-			diff: 'normal',
-			charter: 'xFly',
-			level: 7,
+			name: this.songName,
+			diff: this.diff,
+			charter: this.charter,
+			level: this.level,
 			notes: this.notes,
 			rotates: [],
 			version: Version,
@@ -856,6 +894,10 @@ export class Scene_Title extends Scene {
 				this.notes = input.notes;
 				this.BPMList = input.BPMList;
 				this.BPMText.text = `BPM: ${this.BPM.toString()}`;
+				this.songName = input.name;
+				this.diff = input.diff;
+				this.level = input.level;
+				this.charter = input.charter;
 			};
 			reader.onerror = (e) => alert(e.target.error.name);
 			reader.readAsText(file);
@@ -894,6 +936,7 @@ export class Scene_Title extends Scene {
 	}
 
 	// HTML部分
+	// 變更BPM
 	async changeBPM() {
 		const result = await Window_BPM.open(this.gameContainer, this.BPMList);
 		console.log(result);
@@ -906,11 +949,39 @@ export class Scene_Title extends Scene {
 				alert(`BPM設定：${bpmRow}無效！`)
 				return null;
 			}).filter((a) => !!a);
-			this.secPerBeat = 60 / this.BPM;
 			this.BPMText.text = `BPM: ${this.BPM.toString()}`;
 		}
 	}
 
+	// 變更譜面資訊
+	async changeMeta() {
+		const result = await Window_Meta.open(this.gameContainer, {
+			name: this.songName,
+			diff: this.diff,
+			charter: this.charter,
+			level: this.level
+		});
+		console.log(result);
+		if (result) {
+			this.songName = result.name;
+			this.diff = result.diff;
+			this.charter = result.charter;
+			this.level = result.level;
+		}
+	}
+
+	// 需即時運算的getter
+	// judgeBar半徑
+	// 每拍秒數
+	get secPerBeat() {
+		return 60 / this.BPM;
+	}
+	// 判定線的半徑
+	get judgeBarRadius() {
+		return GameConsts.height / 2;
+	}
+	// 目前BPM
+	// TODO: 變速判定
 	get BPM() {
 		return this.BPMList.find(bpmRow => this.time >= bpmRow[0])?.[1];
 	}
@@ -927,40 +998,5 @@ export class Scene_Title extends Scene {
 		return passedBPMTime + Math.floor((this.time - passedBPMTime) / stepTime) * (stepTime);
 	}
 
-	// : 以時間和Note取得目前長條所在的角度
-	getCurrentRailRotationByTime(note: INote, time: number): number {
-		// 壓根兒還沒開始或根本沒下一個節點
-		if (time < note.time || !note.nextNode) {
-			return note.rotation;
-		}
-		const nextNode = note.nextNode;
-		// 或已經超出最後一個節點位置了
-		if (time > nextNode.time) {
-			return note.rotation + nextNode.delta;
-		}
-
-		let movement = 0;
-		// 真的都不是才進行計算
-		switch (nextNode.mathFunc) {
-			case 'Si':
-			// movement = nextNode.delta * (1 - (
-			// 	Math.sin(-Math.PI / 2 * (1 - (time - nextNode.time) / (note.nextNode.time - note.time)))
-			// ));
-			// break;
-			case 'So':
-			// movement = nextNode.delta * Math.sin(Math.PI / 2 * (1 - (nextNode.time - time) / (note.nextNode.time - note.time)));
-			// break;
-			// linear 線性
-			default:
-				movement = nextNode.delta * (1 - (nextNode.time - time) / (note.nextNode.time - note.time));
-
-		}
-		return note.rotation + movement;
-	}
-
-	// https://easings.net/zh-tw
-	easeInSine(x: number): number {
-		return 1 - Math.cos((x * Math.PI) / 2);
-	}
 }
 
