@@ -311,8 +311,8 @@ export class Scene_Title extends Scene {
 			{ name: 'Click', noteType: NoteType.CLICK, color: 0x0 },
 			{ name: 'Catch', noteType: NoteType.CATCH, color: 0xffff00 },
 			{ name: 'Long', noteType: NoteType.LONG, color: 0x00FFFF },
-			{ name: 'LRotate', noteType: NoteType.LSPIN, color: 0xFF3333 },
-			{ name: 'RRotate', noteType: NoteType.RSPIN, color: 0x3333FF }
+			{ name: 'LRotate', noteType: NoteType.LSPIN, color: 0x3333FF  },
+			{ name: 'RRotate', noteType: NoteType.RSPIN, color: 0xFF3333 }
 		].map((noteType, index: number) => {
 			const c = new PIXI.Container();
 			const rect = new PIXI.Graphics();
@@ -649,11 +649,11 @@ export class Scene_Title extends Scene {
 				break;
 			case NoteType.LSPIN:
 				// 左旋
-				graphics.lineStyle(lineSize, 0xff3333, alpha);
+				graphics.lineStyle(lineSize, 0x5555ff, alpha);
 				break;
 			case NoteType.RSPIN:
 				// 右旋
-				graphics.lineStyle(lineSize, 0x3333ff, alpha);
+				graphics.lineStyle(lineSize, 0xff5555, alpha);
 				break;
 			// 單壓
 			default:
