@@ -84,6 +84,9 @@ export class Scene_Title extends Scene {
 	level: number = 1;
 	diff: string = '';
 
+	// 20220418：陀螺儀模式
+	gyro: boolean;
+
 	// 讀取資源區
 	constructor() {
 		super();
@@ -172,10 +175,25 @@ export class Scene_Title extends Scene {
 
 		this.addChild(divideText);
 
+		// 陀螺儀模式
+		const gyroText = new PIXI.Text(`陀螺儀模式：關閉`,
+			{ fontFamily: 'Arial', fontSize: 24, fill: 0xffffff, align: 'left' })
+		gyroText.interactive = true;
+		gyroText.buttonMode = true;
+		gyroText.on('pointerdown', (() => {
+			this.gyro = !this.gyro;
+			gyroText.text = `陀螺儀模式：${this.gyro ? '開啟' : '關閉'}`;
+			gyroText.style.fill = this.gyro ? 0xFF7777 : 0xFFFFFF;
+		}).bind(this));
+		gyroText.x = GameConsts.width - 168;
+		gyroText.y = divideText.y + 48 + 8;
+
+		this.addChild(gyroText);
+
 		// Note 工具列
 		const noteToolBar = this.createNoteTypeToolbar();
 		noteToolBar.x = GameConsts.width - 96;
-		noteToolBar.y = divideText.y + 24 + 8;
+		noteToolBar.y = gyroText.y + 24 + 8;
 		this.addChild(noteToolBar);
 
 		// BPM
@@ -311,7 +329,7 @@ export class Scene_Title extends Scene {
 			{ name: 'Click', noteType: NoteType.CLICK, color: 0x0 },
 			{ name: 'Catch', noteType: NoteType.CATCH, color: 0xffff00 },
 			{ name: 'Long', noteType: NoteType.LONG, color: 0x00FFFF },
-			{ name: 'LRotate', noteType: NoteType.LSPIN, color: 0x3333FF  },
+			{ name: 'LRotate', noteType: NoteType.LSPIN, color: 0x3333FF },
 			{ name: 'RRotate', noteType: NoteType.RSPIN, color: 0xFF3333 }
 		].map((noteType, index: number) => {
 			const c = new PIXI.Container();
@@ -380,7 +398,7 @@ export class Scene_Title extends Scene {
 	}
 	// 以時間和角度取得點擊到的Note
 	getNoteByTimeAndRotation(time: number, rotation: number) {
-		return this.notes.find(n =>
+		const aNote = this.notes.find(n =>
 			// 必須要是在畫面上的Note且按到的時間大於要選的Note的時間
 			n.time >= this.time && time >= n.time &&
 			// 且避免按錯, 按的時間與Note時間間隔要小於節拍分割
@@ -388,8 +406,22 @@ export class Scene_Title extends Scene {
 			// 而且目前選擇範圍要跟Note顯示範圍重合
 			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * (n.size + this.noteSize) / 2
 		);
+		const bNote = this.notes.find(n =>
+			// 取是在畫面上且比他晚一顆的Note
+			n.time >= this.time && n.time >= time &&
+			// 且避免按錯, 按的時間與Note時間間隔要小於節拍分割
+			Math.abs(n.time - time) <= (240 / this.BPM / this.assistDividerDivideNumber) &&
+			// 而且目前選擇範圍要跟Note顯示範圍重合
+			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * (n.size + this.noteSize) / 2
+		);
+
+		// 取時間距離較近的Note
+		if (aNote && bNote) {
+			return Math.abs(aNote.time - time) < Math.abs(bNote.time - time) ? bNote : aNote;
+		}
+		return aNote || bNote;
 	}
-	// : 以時間和Note取得目前長條所在的角度
+	// 以時間和Note取得目前長條所在的角度
 	getCurrentRailRotationByTime(note: INote, time: number): number {
 		// 壓根兒還沒開始或根本沒下一個節點
 		if (time < note.time || !note.nextNode) {
@@ -457,6 +489,25 @@ export class Scene_Title extends Scene {
 					this.noteGraphics.arc(0, 0, rad,
 						-0.19 * (n.size || 1) + rotation - Math.PI / 2,
 						0.19 * (n.size || 1) + rotation - Math.PI / 2);
+
+					// 有陀螺儀時 多顯示不同顏色
+					if (n.gyro) {
+						this.noteGraphics.endHole();
+						// 畫個黑的
+						this.noteGraphics.lineStyle(lineSize*2, 0x3333FF, alpha);
+						this.noteGraphics.arc(0, 0, rad,
+							rotation - Math.PI / 2,
+							0.08 * (n.size || 1) + rotation - Math.PI / 2);
+						this.noteGraphics.endHole();
+						// 再畫個白的
+						this.noteGraphics.lineStyle(lineSize*2, 0xFF3333, alpha);
+						this.noteGraphics.arc(0, 0, rad,
+							-0.08 * (n.size || 1) + rotation - Math.PI / 2,
+							rotation - Math.PI / 2);
+						this.noteGraphics.endHole();
+						// 顏色還人家
+						this.setLineStyleByType(this.noteGraphics, n.type, lineSize, alpha);
+					}
 					// 針對長條下一個節點的繪製
 					if (n.nextNode) {
 						this.noteGraphics.beginFill(0x00aaaa, alpha / 2);
@@ -488,6 +539,32 @@ export class Scene_Title extends Scene {
 						-0.19 * (n.size || 1) + nextRotation - Math.PI / 2,
 						0.19 * (n.size || 1) + nextRotation - Math.PI / 2);
 					//}
+
+					if (this.time > n.time) {
+						// 目前時間晚於起始點則計算目前位置
+						const currentRotation = (this.getCurrentRailRotationByTime(n, this.time)) / 57.2958;
+						this.noteGraphics.arc(0, 0, this.getRadiusByTime(this.time),
+							-0.19 * (n.size || 1) + currentRotation - Math.PI / 2,
+							0.19 * (n.size || 1) + currentRotation - Math.PI / 2);
+						// this.debugText.text = `${currentRotation}`;
+						this.noteGraphics.beginFill(0x00aaaa, alpha / 2);
+					}
+
+					if (n.time > this.time) {
+						const lineSize = this.getlineSizeByTime(n.time < this.time ? this.time : n.time, 16);
+						this.setLineStyleByType(this.noteGraphics, n.type, lineSize, alpha);
+
+						// x, y, 半徑
+						const rad = this.getRadiusByTime(n.time);
+
+						// / 57.2958
+						const rotation = n.rotation / 57.2958;
+						// 角度0時為3點鐘方向
+						this.noteGraphics.arc(0, 0, rad,
+							-0.19 * (n.size || 1) + rotation - Math.PI / 2,
+							0.19 * (n.size || 1) + rotation - Math.PI / 2);
+					}
+
 					this.noteGraphics.endFill();
 					this.noteGraphics.endHole();
 				} else {
@@ -675,43 +752,56 @@ export class Scene_Title extends Scene {
 			if (this.previewTime < this.time) {
 				return;
 			}
-			// 已有綁定長條時移除長條
-			if (this.ctrl && lastSelectedNote.nextNode && lastSelectedNote.type === NoteType.LONG) {
-				lastSelectedNote.nextNode = null;
-				return;
-			}
-			if (!this.selectedNote) {
-				// 放置note
-				const newNote: INote = {
-					time: this.previewTime,
-					type: this.noteType,
+			if (this.gyro) {
+				// 開啟陀螺儀模式時
 
-					rotation: Math.round(this.previewGraphics.rotation * 57.2958 + 360) % 360,
-					size: this.noteSize
-				};
-				this.selectedNote = newNote;
-				if (this.ctrl && newNote.type === NoteType.LONG && lastSelectedNote.type === NoteType.LONG) {
-					// 將上一個Note跟目前的Note接一起
-					lastSelectedNote.nextNode = {
-						time: this.selectedNote.time,
-						delta: this.selectedNote.rotation - lastSelectedNote.rotation,
-						size: this.selectedNote.size
-					};
+				// 未選到Note時則不做任何事
+				if (!this.selectedNote) {
+					return;
 				}
-				this.notes.push(newNote);
 
+				// 否則開關開Note的陀螺儀參數
+				this.selectedNote.gyro = !this.selectedNote.gyro;
 			} else {
-				if (this.ctrl && lastSelectedNote.type === NoteType.LONG && this.selectedNote.type === NoteType.LONG) {
-					// 將上一個Note跟目前的Note接一起
-					lastSelectedNote.nextNode = {
-						time: this.selectedNote.time,
-						delta: this.selectedNote.rotation - lastSelectedNote.rotation,
-						size: this.selectedNote.size
+				// 未開啟陀螺儀模式時
+				// 已有綁定長條時移除長條
+				if (this.ctrl && lastSelectedNote.nextNode && lastSelectedNote.type === NoteType.LONG) {
+					lastSelectedNote.nextNode = null;
+					return;
+				}
+				if (!this.selectedNote) {
+					// 放置note
+					const newNote: INote = {
+						time: this.previewTime,
+						type: this.noteType,
+
+						rotation: Math.round(this.previewGraphics.rotation * 57.2958 + 360) % 360,
+						size: this.noteSize
 					};
+					this.selectedNote = newNote;
+					if (this.ctrl && newNote.type === NoteType.LONG && lastSelectedNote.type === NoteType.LONG) {
+						// 將上一個Note跟目前的Note接一起
+						lastSelectedNote.nextNode = {
+							time: this.selectedNote.time,
+							delta: this.selectedNote.rotation - lastSelectedNote.rotation,
+							size: this.selectedNote.size
+						};
+					}
+					this.notes.push(newNote);
+
 				} else {
-					// 移除Note
-					this.notes = this.notes.filter(n => n !== this.selectedNote);
-					this.selectedNote = null;
+					if (this.ctrl && lastSelectedNote.type === NoteType.LONG && this.selectedNote.type === NoteType.LONG) {
+						// 將上一個Note跟目前的Note接一起
+						lastSelectedNote.nextNode = {
+							time: this.selectedNote.time,
+							delta: this.selectedNote.rotation - lastSelectedNote.rotation,
+							size: this.selectedNote.size
+						};
+					} else {
+						// 移除Note
+						this.notes = this.notes.filter(n => n !== this.selectedNote);
+						this.selectedNote = null;
+					}
 				}
 			}
 		} else if (event.data.button === 1) {

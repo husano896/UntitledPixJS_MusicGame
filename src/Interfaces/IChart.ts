@@ -40,6 +40,8 @@ export interface INote {
 	rotation: number;
 	// 20220224：只記錄下一個節點的位置
 	nextNode?: ILongNoteNode;
+	// 20220418：是否受陀螺儀影響
+	gyro?: boolean;
 }
 
 // 檯面旋轉點
