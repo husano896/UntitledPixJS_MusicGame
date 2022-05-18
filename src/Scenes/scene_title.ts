@@ -417,7 +417,7 @@ export class Scene_Title extends Scene {
 
 		// 取時間距離較近的Note
 		if (aNote && bNote) {
-			return Math.abs(aNote.time - time) < Math.abs(bNote.time - time) ? bNote : aNote;
+			return Math.abs(aNote.time - time) < Math.abs(bNote.time - time) ? aNote : bNote;
 		}
 		return aNote || bNote;
 	}
