@@ -398,6 +398,7 @@ export class Scene_Title extends Scene {
 	}
 	// 以時間和角度取得點擊到的Note
 	getNoteByTimeAndRotation(time: number, rotation: number) {
+		/*
 		const aNote = this.notes.find(n =>
 			// 必須要是在畫面上的Note且按到的時間大於要選的Note的時間
 			n.time >= this.time && time >= n.time &&
@@ -406,6 +407,7 @@ export class Scene_Title extends Scene {
 			// 而且目前選擇範圍要跟Note顯示範圍重合
 			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * (n.size + this.noteSize) / 2
 		);
+		*/
 		const bNote = this.notes.find(n =>
 			// 取是在畫面上且比他晚一顆的Note
 			n.time >= this.time && n.time >= time &&
@@ -414,12 +416,13 @@ export class Scene_Title extends Scene {
 			// 而且目前選擇範圍要跟Note顯示範圍重合
 			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * (n.size + this.noteSize) / 2
 		);
-
+		return bNote;
+		/*
 		// 取時間距離較近的Note
 		if (aNote && bNote) {
 			return Math.abs(aNote.time - time) < Math.abs(bNote.time - time) ? aNote : bNote;
 		}
-		return aNote || bNote;
+		return aNote || bNote;*/
 	}
 	// 以時間和Note取得目前長條所在的角度
 	getCurrentRailRotationByTime(note: INote, time: number): number {
@@ -494,13 +497,13 @@ export class Scene_Title extends Scene {
 					if (n.gyro) {
 						this.noteGraphics.endHole();
 						// 畫個黑的
-						this.noteGraphics.lineStyle(lineSize*2, 0x3333FF, alpha);
+						this.noteGraphics.lineStyle(lineSize * 2, 0x3333FF, alpha);
 						this.noteGraphics.arc(0, 0, rad,
 							rotation - Math.PI / 2,
 							0.08 * (n.size || 1) + rotation - Math.PI / 2);
 						this.noteGraphics.endHole();
 						// 再畫個白的
-						this.noteGraphics.lineStyle(lineSize*2, 0xFF3333, alpha);
+						this.noteGraphics.lineStyle(lineSize * 2, 0xFF3333, alpha);
 						this.noteGraphics.arc(0, 0, rad,
 							-0.08 * (n.size || 1) + rotation - Math.PI / 2,
 							rotation - Math.PI / 2);
