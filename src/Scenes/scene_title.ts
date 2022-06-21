@@ -82,8 +82,9 @@ export class Scene_Title extends Scene {
 	songName: string = '';
 	charter: string = '';
 	level: number = 1;
-	diff: string = '';
-
+	diff: IChart["diff"] = 'normal';
+	// 20220621：曲師meta
+	artist: string = '';
 	// 20220418：陀螺儀模式
 	gyro: boolean;
 
@@ -412,7 +413,7 @@ export class Scene_Title extends Scene {
 			// 取是在畫面上且比他晚一顆的Note
 			n.time >= this.time && n.time >= time &&
 			// 且避免按錯, 按的時間與Note時間間隔要小於節拍分割
-			Math.abs(n.time - time) <= (240 / this.BPM / this.assistDividerDivideNumber) &&
+			Math.abs(n.time - time) < (240 / this.BPM / this.assistDividerDivideNumber / 2) &&
 			// 而且目前選擇範圍要跟Note顯示範圍重合
 			Math.abs((n.rotation - rotation)) < this.DEGREEDIV * (n.size + this.noteSize) / 2
 		);
@@ -575,7 +576,6 @@ export class Scene_Title extends Scene {
 					this.noteGraphics.endFill();
 					this.noteGraphics.endHole();
 				}
-
 			}
 		});
 	}
@@ -958,11 +958,12 @@ export class Scene_Title extends Scene {
 			beatList: [
 				[0, 4, 4]
 			],
-			BPMList: this.BPMList
+			BPMList: this.BPMList,
+			artist: this.artist
 		}
 		const a = document.createElement('a');
 		a.href = URL.createObjectURL(new Blob([JSON.stringify(output)], { type: `text/json` }));
-		a.download = 'chart.json';
+		a.download = `${this.songName || 'songName'}_${this.diff || 'diff'}.json`;
 		a.click();
 	}
 
@@ -1052,7 +1053,8 @@ export class Scene_Title extends Scene {
 			name: this.songName,
 			diff: this.diff,
 			charter: this.charter,
-			level: this.level
+			level: this.level,
+			artist: this.artist
 		});
 		console.log(result);
 		if (result) {
@@ -1060,6 +1062,7 @@ export class Scene_Title extends Scene {
 			this.diff = result.diff;
 			this.charter = result.charter;
 			this.level = result.level;
+			this.artist = result.artist;
 		}
 	}
 
@@ -1075,12 +1078,12 @@ export class Scene_Title extends Scene {
 	}
 	// 目前BPM
 	// TODO: 變速判定
-	get BPM() {
+	private get BPM() {
 		return this.BPMList.find(bpmRow => this.time >= bpmRow[0])?.[1];
 	}
 
 	// TODO: 取得目前小節的開始時間
-	get currentMeasureStartTime() {
+	private get currentMeasureStartTime() {
 		const passedBPMTime = this.BPMList.map(bpmRow => {
 			// 已經過去的時間直接加上
 			if (this.time >= bpmRow[0]) {

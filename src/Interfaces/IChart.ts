@@ -67,8 +67,8 @@ export interface IChart {
 	name: string;
 	// 譜師名
 	charter: string;
-	// 難度 (Easy/Normal/Hard)
-	diff: 'easy' | 'normal' | 'hard' | string;
+	// 難度 (Normal/Hard/Another)
+	diff: 'normal' | 'hard' | 'another' | string;
 	// 等級
 	level: number;
 	// 拍點
@@ -83,18 +83,21 @@ export interface IChart {
 	beatList: Array<[number, number, number]>;
 	// 20220223新增：BPM
 	BPMList: Array<[number, number]>;
+	// 20220621新增：曲師meta
+	artist: string;
 }
 
 // 
 export const exampleChart: IChart = {
 	name: '測試歌曲',
+	artist: '測試曲師',
 	charter: '測試譜師',
 	diff: 'normal',
 	level: 10,
 	notes: [],
 	rotates: [],
 	scrollSpeeds: [],
-	version: '1.1-20220223',
+	version: '1.1-20220621',
 	beatList: [
 		[0, 4, 4]
 	],

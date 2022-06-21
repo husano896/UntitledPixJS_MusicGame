@@ -1,7 +1,7 @@
 // 編輯譜面的基本資訊用
 // 不是天殺的Metaverse
 interface IMeta {
-    name: string, charter: string, diff: string, level: number
+    name: string, charter: string, diff: string, level: number, artist: string
 }
 
 export class Window_Meta {
@@ -23,6 +23,10 @@ export class Window_Meta {
                 <td><input required id="name" value="${meta.name}"/ ></td>
             </tr>
             <tr>
+                <td>作曲者</td>
+                <td><input required id="artist" value="${meta.artist}"/ ></td>
+            </tr>
+            <tr>
                 <td>製譜師</td>
                 <td><input required id="charter" value="${meta.charter}"/ ></td>
             </tr>
@@ -41,7 +45,7 @@ export class Window_Meta {
 
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'actions';
-            // 取消 & 儲存
+            // 取消
             const cancelButton = document.createElement('button');
             cancelButton.className = 'cancel'
             cancelButton.innerText = '取消';
@@ -51,13 +55,14 @@ export class Window_Meta {
             }).bind(this);
 
             actionsDiv.appendChild(cancelButton);
-            // 取消 & 確認(但還沒儲存到檔案！)
+            // 確認(但還沒儲存到檔案！)
             const saveButton = document.createElement('button');
             saveButton.className = 'ok'
             saveButton.innerText = '確認';
             saveButton.onclick = (() => {
                 gameContainer.removeChild(window);
                 const meta = {
+                    artist: (table.querySelector('#artist') as HTMLInputElement).value || '',
                     name: (table.querySelector('#name') as HTMLInputElement).value || '',
                     charter: (table.querySelector('#charter') as HTMLInputElement).value || '',
                     diff: (table.querySelector('#diff') as HTMLInputElement).value || '',
